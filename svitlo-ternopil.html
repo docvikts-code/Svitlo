@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Світло: Тернопільщина</title>
+<style>
+:root{--bg:#e9eef2;--card:#fbfcfd;--ink:#101c26;--mut:#5d6c79;--line:#cdd7df;--on:#1f8f63;--off:#d1453b;--maybe:#c98f0a;--none:#c3ccd3;--acc:#1b4b6b;--accink:#fff;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0d151c;--card:#152029;--ink:#e7eef3;--mut:#8da0af;--line:#263642;--on:#3cc08c;--off:#f0675c;--maybe:#f0be45;--none:#2c3a46;--acc:#8cc4ea;--accink:#0d151c;color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:max(14px,env(safe-area-inset-top)) 14px max(40px,env(safe-area-inset-bottom))}
+main{max-width:560px;margin:0 auto;display:grid;gap:12px}
+h1{font-size:24px;line-height:1.2;margin:6px 0 0;font-weight:750;letter-spacing:-.02em}
+p{margin:6px 0 0}
+.mut{color:var(--mut);font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--acc);color:var(--accink);border:0;border-radius:8px;padding:10px 14px;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+input,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);margin-top:8px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.chip{background:transparent;color:var(--ink);border:1px solid var(--line);border-radius:999px;text-align:left}
+.chip[aria-pressed=true]{background:var(--acc);color:var(--accink);border-color:var(--acc)}
+.list{display:grid;gap:6px;margin-top:10px}
+.list button{text-align:left;background:var(--bg);color:var(--ink);border:1px solid var(--line)}
+.big{font-size:26px;font-weight:750;letter-spacing:-.02em}
+.tOn{color:var(--on)}.tOff{color:var(--off)}.tMaybe{color:var(--maybe)}
+.warn{border-color:var(--off);border-width:2px}
+.bar{position:relative;display:grid;grid-template-columns:repeat(48,1fr);gap:1px;height:34px;margin:10px 0 4px;border-radius:6px;overflow:hidden}
+.bar i{background:var(--none)}
+.bar .s0{background:var(--on)}.bar .s1{background:var(--off)}.bar .s10{background:var(--maybe)}
+.now{position:absolute;top:0;bottom:0;width:3px;background:var(--ink);box-shadow:0 0 0 1px var(--card)}
+.axis{display:flex;justify-content:space-between;color:var(--mut);font-size:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+pre{white-space:pre-wrap;word-break:break-all;font-size:11px;max-height:240px;overflow:auto;background:var(--bg);padding:8px;border-radius:8px;user-select:text}
+summary{cursor:pointer}
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Світло на Тернопільщині</h1>
+    <p class="mut">Прототип: графік за вашою адресою з poweron.toe.com.ua</p>
+  </div>
+
+  <section class="card">
+    <b>Мої адреси</b>
+    <div class="chips" id="chips"></div>
+    <button id="addBtn">Додати адресу</button>
+  </section>
+
+  <section class="card" id="wiz" hidden></section>
+
+  <div id="view" style="display:grid;gap:12px"></div>
+
+  <section class="card">
+    <label for="lead"><b>Попереджати за</b></label>
+    <select id="lead">
+      <option value="15">15 хвилин</option>
+      <option value="30">30 хвилин</option>
+      <option value="60">1 годину</option>
+      <option value="120">2 години</option>
+    </select>
+    <p class="mut">У прототипі це підсвічує картку статусу. Справжні сповіщення будуть в Android-додатку.</p>
+  </section>
+
+  <details class="card">
+    <summary>Технічні дані</summary>
+    <pre id="diag">Запитів ще не було</pre>
+    <button class="ghost" id="copy">Копіювати</button>
+  </details>
+</main>
+
+<script>
+const API='https://api-poweron.toe.com.ua/api',TZ='Europe/Kyiv';
+const $=s=>document.querySelector(s),enc=encodeURIComponent;
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const logs=[];
+function log(s){logs.push(new Date().toTimeString().slice(0,8)+' '+s);if(logs.length>30)logs.shift();$('#diag').textContent=logs.join('\n')}
+const mem={};
+const store={
+  get(k,d){try{const v=localStorage.getItem(k);if(v!==null)return JSON.parse(v)}catch(e){}return k in mem?mem[k]:d},
+  set(k,v){mem[k]=v;try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+};
+const members=d=>Array.isArray(d)?d:(d&&(d['hydra:member']||d.member))||[];
+
+async function api(path,key){
+  log('GET '+path);
+  const r=await fetch(API+path,key?{headers:{'X-debug-key':key}}:undefined);
+  const t=await r.text();
+  log(r.status+' '+t.slice(0,400));
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  return JSON.parse(t);
+}
+
+function kyiv(){
+  const p={};
+  new Intl.DateTimeFormat('en-CA',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})
+    .formatToParts(new Date()).forEach(x=>p[x.type]=x.value);
+  return {date:p.year+'-'+p.month+'-'+p.day,min:+p.hour*60+ +p.minute};
+}
+const addDays=(d,n)=>{const x=new Date(d+'T12:00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
+const hhmm=m=>String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+const dur=m=>[m>=60&&Math.floor(m/60)+' год',m%60&&(m%60)+' хв'].filter(Boolean).join(' ')||'0 хв';
+const when=j=>(j>=48?'завтра ':'')+hhmm(j*30);
+
+async function loadSchedule(a){
+  const {date}=kyiv();
+  const after=addDays(date,-1)+'T12:00:00.000Z',before=addDays(date,1)+'T00:00:00.000Z';
+  const q='/a_gpv_g?after='+enc(after)+'&before='+enc(before)+'&group%5B%5D='+enc(a.group||'')+'&time='+enc(''+a.cityId+a.streetId+a.house);
+  let d;
+  try{d=await api(q)}
+  catch(e){d=await api(q,btoa(unescape(enc(a.cityId+'/'+a.streetId+'/'+a.house))))}
+  const days={};
+  members(d).forEach(m=>{
+    let dj=m.dataJson;
+    if(typeof dj==='string'){try{dj=JSON.parse(dj)}catch(e){}}
+    const g=dj&&(dj[a.group]||Object.values(dj)[0]);
+    if(!g||!g.times)return;
+    const s=Array(48).fill(null);
+    for(const [k,v] of Object.entries(g.times)){
+      const [h,mi]=k.split(':').map(Number);
+      if(h>=0&&h<24)s[h*2+(mi>=30?1:0)]=+v;
+    }
+    days[String(m.dateGraph).slice(0,10)]=s;
+  });
+  return days;
+}
+
+/* ---------- відображення ---------- */
+let cur=null;
+
+function statusCard(days,date,min){
+  const all=[...(days[date]||Array(48).fill(null)),...(days[addDays(date,1)]||Array(48).fill(null))];
+  const i=Math.floor(min/30),s=all[i];
+  const c=el('section','card');
+  const name={0:'Світло є',1:'Світла немає',10:'Можливе відключення'}[s]||'Немає даних';
+  c.append(el('div','big '+(s===1?'tOff':s===0?'tOn':s===10?'tMaybe':''),name));
+  if(s==null){c.append(el('p','mut','Графік на сьогодні ще не опубліковано.'));return c}
+  if(s===1){
+    let j=i+1;while(j<96&&all[j]===1)j++;
+    c.append(el('p',null,j<96?'Світло має з’явитися о '+when(j)+' (через '+dur((j-i)*30-min%30)+')':'Відключення триває до кінця завтрашнього дня'));
+  }else{
+    const j=all.findIndex((x,k)=>k>i&&x===1);
+    if(j<0)c.append(el('p',null,'Найближчим часом відключень за графіком немає'));
+    else{
+      const left=(j-i)*30-min%30;
+      c.append(el('p',null,'Наступне відключення о '+when(j)+' (через '+dur(left)+')'));
+      if(left<=store.get('lead',30)){
+        c.classList.add('warn');
+        c.append(el('p','tOff','Скоро відключення: зарядіть телефон і павербанк'));
+      }
+    }
+  }
+  return c;
+}
+
+function dayCard(title,date,s,min){
+  const c=el('section','card');
+  c.append(el('b',null,title+', '+date.slice(8)+'.'+date.slice(5,7)));
+  if(!s){c.append(el('p','mut','Графік ще не опубліковано'));return c}
+  const bar=el('div','bar');
+  s.forEach((v,k)=>{const x=el('i',v==null?'':'s'+v);x.title=hhmm(k*30);bar.append(x)});
+  if(min!=null){const n=el('b','now');n.style.left=(min/14.4)+'%';bar.append(n)}
+  const ax=el('div','axis');['00','06','12','18','24'].forEach(t=>ax.append(el('span',null,t)));
+  c.append(bar,ax);
+  const out=[];let k=0;
+  while(k<48){
+    const v=s[k];
+    if(v===1||v===10){let e=k;while(e<48&&s[e]===v)e++;out.push([v,k*30,e*30]);k=e}else k++;
+  }
+  if(!out.length)c.append(el('p','mut','Відключень за графіком немає'));
+  out.forEach(([v,a,b])=>c.append(el('p',null,(v===1?'🔴 Немає світла ':'🟡 Можливо немає ')+hhmm(a)+'–'+(b===1440?'24:00':hhmm(b))+' ('+dur(b-a)+')')));
+  return c;
+}
+
+function render(){
+  const v=$('#view');v.replaceChildren();
+  if(!cur)return;
+  const {a,days,err}=cur;
+  const head=el('section','card');
+  head.append(el('b',null,a.label),el('p','mut','Підчерга '+(a.group||'невідома')+(cur.stamp?' · оновлено '+cur.stamp:'')));
+  const row=el('div','row');
+  const r=el('button','ghost','Оновити');r.onclick=()=>select(a.id);
+  const d=el('button','ghost','Видалити адресу');d.onclick=()=>remove(a.id);
+  row.append(r,d);head.append(row);v.append(head);
+  if(err||!days){
+    const e=el('section','card warn');
+    e.append(el('b',null,'Не вдалося отримати графік'),el('p',null,err||'Порожня відповідь'));
+    e.append(el('p','mut','Якщо тут «Failed to fetch», браузер, імовірно, заблокував запит із цієї сторінки. Скопіюйте «Технічні дані» й надішліть мені: в Android-додатку такого обмеження немає.'));
+    v.append(e);return;
+  }
+  const {date,min}=kyiv();
+  v.append(statusCard(days,date,min),dayCard('Сьогодні',date,days[date],min),dayCard('Завтра',addDays(date,1),days[addDays(date,1)],null));
+}
+
+async function refresh(a){
+  try{cur={a,days:await loadSchedule(a),stamp:hhmm(kyiv().min)}}
+  catch(e){cur={a,days:null,err:e.message}}
+  render();
+}
+async function select(id){
+  const a=store.get('addrs',[]).find(x=>x.id===id);
+  if(!a)return;
+  store.set('sel',id);drawChips();
+  cur={a,days:null};
+  $('#view').replaceChildren(el('p','mut','Завантажую…'));
+  await refresh(a);
+}
+function remove(id){
+  const l=store.get('addrs',[]).filter(x=>x.id!==id);
+  store.set('addrs',l);cur=null;drawChips();render();
+  if(l.length)select(l[0].id);else startWizard();
+}
+function drawChips(){
+  const c=$('#chips');c.replaceChildren();
+  const sel=store.get('sel'),l=store.get('addrs',[]);
+  if(!l.length)c.append(el('span','mut','Адрес ще немає'));
+  l.forEach(a=>{
+    const b=el('button','chip',a.label);
+    b.setAttribute('aria-pressed',String(a.id===sel));
+    b.onclick=()=>select(a.id);
+    c.append(b);
+  });
+}
+
+/* ---------- додавання адреси ---------- */
+function searchStep(title,ph,min,load,label,done){
+  const w=$('#wiz');w.hidden=false;w.replaceChildren(el('b',null,title));
+  const inp=el('input');inp.placeholder=ph;inp.setAttribute('aria-label',ph);
+  const list=el('div','list');
+  w.append(inp,list);
+  let t;
+  inp.oninput=()=>{
+    clearTimeout(t);
+    t=setTimeout(async()=>{
+      const q=inp.value.trim();list.replaceChildren();
+      if(q.length<min)return;
+      try{
+        const items=await load(q);
+        if(!items.length)list.append(el('p','mut','Нічого не знайдено'));
+        items.slice(0,30).forEach(it=>{const b=el('button',null,label(it));b.onclick=()=>done(it);list.append(b)});
+      }catch(e){list.append(el('p','mut','Помилка: '+e.message+'. Деталі — у «Технічні дані».'))}
+    },350);
+  };
+  inp.focus();
+}
+const startWizard=()=>searchStep('Населений пункт','Назва, напр. Бережани',3,
+  q=>api('/pw_cities?pagination=false&name='+enc(q)).then(members),
+  c=>c.name+(c.otg&&c.otg.name?' · '+c.otg.name:''),pickStreet);
+function pickStreet(city){
+  searchStep('Вулиця: '+city.name,'Назва вулиці',3,
+    q=>api('/pw_streets?pagination=false&city.id='+city.id+'&name='+enc(q)).then(members),
+    s=>s.name,s=>pickHouse(city,s));
+}
+async function pickHouse(city,street){
+  let all=[];
+  try{all=(await api('/pw-accounts/building-names?cityId='+city.id+'&streetId='+street.id)).buildingNames||[]}catch(e){}
+  const seen=new Set();
+  all=all.filter(x=>!seen.has(x.buildingName)&&seen.add(x.buildingName));
+  searchStep('Будинок: '+street.name+' (знайдено '+all.length+')','Номер будинку',1,
+    async q=>all.filter(x=>String(x.buildingName).toLowerCase().includes(q.toLowerCase())),
+    x=>x.buildingName+(x.chergGpv?' · підчерга '+x.chergGpv:''),h=>save(city,street,h));
+}
+function save(city,street,h){
+  const a={id:Date.now(),cityId:city.id,streetId:street.id,house:h.buildingName,group:h.chergGpv,label:city.name+', '+street.name+', '+h.buildingName};
+  const l=store.get('addrs',[]);l.push(a);store.set('addrs',l);
+  $('#wiz').hidden=true;select(a.id);
+}
+
+/* ---------- запуск ---------- */
+$('#addBtn').onclick=startWizard;
+$('#lead').value=store.get('lead',30);
+$('#lead').onchange=e=>{store.set('lead',+e.target.value);render()};
+$('#copy').onclick=()=>{
+  const t=$('#diag').textContent;
+  if(navigator.clipboard)navigator.clipboard.writeText(t).catch(()=>{});
+  const r=document.createRange();r.selectNodeContents($('#diag'));
+  const s=getSelection();s.removeAllRanges();s.addRange(r);
+};
+setInterval(()=>{if(cur&&cur.days)render()},30000);
+setInterval(()=>{if(cur)refresh(cur.a)},900000);
+drawChips();
+{
+  const l=store.get('addrs',[]),sel=store.get('sel');
+  if(l.length)select(l.some(x=>x.id===sel)?sel:l[0].id);else startWizard();
+}
+</script>
+</body>
+</html>
