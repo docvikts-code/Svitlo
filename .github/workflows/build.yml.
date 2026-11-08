@@ -1,0 +1,35 @@
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Prepare project
+        run: |
+          mkdir -p www
+          cp svitlo-ternopil.html www/index.html
+          npm init -y
+          npm install @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
+          echo '{"appId":"com.docvikts.svitlo","appName":"Svitlo","webDir":"www","plugins":{"CapacitorHttp":{"enabled":true}}}' > capacitor.config.json
+          npx cap add android
+      - name: Build APK
+        run: |
+          chmod +x android/gradlew
+          cd android && ./gradlew assembleDebug
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Svitlo build ${{ github.run_number }}
+          files: android/app/build/outputs/apk/debug/app-debug.apk
