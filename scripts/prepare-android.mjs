@@ -1,10 +1,11 @@
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-if (!existsSync('android')) execFileSync(npx, ['cap', 'add', 'android'], { stdio: 'inherit' });
-execFileSync(npx, ['cap', 'sync', 'android'], { stdio: 'inherit' });
+const cli = fileURLToPath(new URL('../node_modules/@capacitor/cli/bin/capacitor', import.meta.url));
+if (!existsSync('android')) execFileSync(process.execPath, [cli, 'add', 'android'], { stdio: 'inherit' });
+execFileSync(process.execPath, [cli, 'sync', 'android'], { stdio: 'inherit' });
 const path = 'android/app/src/main/AndroidManifest.xml';
 let xml = await readFile(path, 'utf8');
 for (const permission of ['POST_NOTIFICATIONS', 'SCHEDULE_EXACT_ALARM']) {
