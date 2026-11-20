@@ -100,7 +100,10 @@ public final class ScheduleLogic {
     static Integer state(Object value) {
         if (value == null || value == JSONObject.NULL || value instanceof Boolean) return null;
         String text = value.toString();
-        return text.equals("0") ? 0 : text.equals("1") ? 1 : text.equals("10") ? 10 : null;
+        if (text.equals("0")) return 0;
+        if (text.equals("1")) return 1;
+        if (text.equals("10")) return 10;
+        return null;
     }
 
     static List<String> keys(JSONObject object) {

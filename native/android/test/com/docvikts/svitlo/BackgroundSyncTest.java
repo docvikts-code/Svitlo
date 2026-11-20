@@ -59,12 +59,14 @@ public class BackgroundSyncTest {
         fake = new PoweronClient() { @Override public JSONObject load(JSONObject a, String d, long n) throws Exception { return snapshot(1); } };
         assertEquals(ListenableWorker.Result.success(), worker().doWork());
         assertEquals(1, Shadows.shadowOf(context.getSystemService(NotificationManager.class)).getAllNotifications().size());
+        android.app.Notification firstNotice = Shadows.shadowOf(context.getSystemService(NotificationManager.class)).getAllNotifications().get(0);
         JSONObject state = new SyncStore(context).read();
         assertTrue(state.getLong("lastBackgroundSuccess") > 0);
         assertEquals(1, state.getJSONObject("snapshots").getJSONObject("a").getJSONObject("schedules").getJSONObject("2.1")
             .getJSONObject(ScheduleLogic.today(System.currentTimeMillis())).getJSONArray("slots").getInt(0));
         assertEquals(ListenableWorker.Result.success(), worker().doWork());
         assertEquals(1, Shadows.shadowOf(context.getSystemService(NotificationManager.class)).getAllNotifications().size());
+        assertSame(firstNotice, Shadows.shadowOf(context.getSystemService(NotificationManager.class)).getAllNotifications().get(0));
     }
     @Test public void failedFetchKeepsLastGraphAndDoesNotAnnounceAnUpdate() throws Exception {
         fake = new PoweronClient() { @Override public JSONObject load(JSONObject a, String d, long n) throws Exception { return snapshot(0); } };
@@ -103,5 +105,39 @@ public class BackgroundSyncTest {
         new SyncRestartReceiver().onReceive(context, new Intent(Intent.ACTION_BOOT_COMPLETED));
         assertEquals(1, WorkManager.getInstance(context).getWorkInfosForUniqueWork(BackgroundWork.PERIODIC).get().size());
         assertEquals(1, WorkManager.getInstance(context).getWorkInfosForUniqueWork(BackgroundWork.IMMEDIATE).get().size());
+    }
+    @Test public void changedGraphAndRemovedAddressCancelTheirOldAlarms() throws Exception {
+        String tomorrow = ScheduleLogic.addDays(ScheduleLogic.today(System.currentTimeMillis()), 1);
+        JSONObject next = snapshot(0);
+        JSONObject tomorrowData = ScheduleLogicTest.schedules("2.1", tomorrow, 0).getJSONObject("2.1").getJSONObject(tomorrow);
+        tomorrowData.getJSONArray("slots").put(26, 1);
+        next.getJSONObject("schedules").getJSONObject("2.1").put(tomorrow, tomorrowData);
+        fake = new PoweronClient() { @Override public JSONObject load(JSONObject a, String d, long n) { return next; } };
+        worker().doWork();
+        assertEquals(1, Shadows.shadowOf(context.getSystemService(AlarmManager.class)).getScheduledAlarms().size());
+        tomorrowData.getJSONArray("slots").put(26, 0);
+        worker().doWork();
+        assertEquals(0, Shadows.shadowOf(context.getSystemService(AlarmManager.class)).getScheduledAlarms().size());
+        tomorrowData.getJSONArray("slots").put(26, 1);
+        worker().doWork();
+        SyncEngine.configure(context, new JSONArray(), 30, true, true, null);
+        assertEquals(0, Shadows.shadowOf(context.getSystemService(AlarmManager.class)).getScheduledAlarms().size());
+    }
+    @Test public void nativeClientUsesAllGroupsAndUtf8AddressHeader() throws Exception {
+        JSONObject address = new JSONObject().put("cityId", "136").put("streetId", "1334").put("house", "5/А");
+        PoweronClient client = new PoweronClient() {
+            int calls = 0;
+            @Override public Object get(String path, String key) throws Exception {
+                calls++;
+                if (calls == 1) return new JSONObject().put("buildingGroups", new JSONArray()
+                    .put(new JSONObject().put("chergGpv", "2.1")).put(new JSONObject().put("chergGpv", "3.1")));
+                assertTrue(path.contains("group%5B%5D=2.1")); assertTrue(path.contains("group%5B%5D=3.1"));
+                assertEquals("136/1334/5/А", new String(android.util.Base64.decode(key, android.util.Base64.DEFAULT), java.nio.charset.StandardCharsets.UTF_8));
+                return new JSONObject().put("hydra:member", new JSONArray().put(ScheduleLogicTest.record("2.1", new JSONObject().put("13:30", "1"), "2026-11-20")));
+            }
+        };
+        JSONObject result = client.load(address, "2026-11-20", System.currentTimeMillis());
+        assertEquals(2, result.getJSONObject("schedules").length());
+        assertEquals(0, result.getJSONObject("schedules").getJSONObject("3.1").length());
     }
 }
