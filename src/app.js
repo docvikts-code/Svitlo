@@ -1,4 +1,4 @@
-import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { API_ORIGIN, TIME_ZONE, STATE_LABELS, members, groupsOf, kyivClock, addDays,
   hhmm, duration, formatSourceTimestamp, scheduleRequest, parseSchedules, intervals, statusInfo, alertEvents } from './core.js';
@@ -27,6 +27,11 @@ function log(text) {
   $('#diag').textContent = logs.slice(-30).join('\n');
 }
 const native = Capacitor.isNativePlatform();
+const android = Capacitor.getPlatform() === 'android';
+const BackgroundSync = registerPlugin('BackgroundSync');
+let backgroundEnabled = store.get('backgroundEnabled', true) !== false;
+let notifyChanges = store.get('notifyChanges', true) !== false;
+let nativeQueue = Promise.resolve();
 let addresses = store.get('addrs', []);
 if (!Array.isArray(addresses)) addresses = [];
 addresses = addresses.filter(a => a && a.id != null && a.cityId && a.streetId && a.house != null);
@@ -79,7 +84,43 @@ async function getGroups(address) {
   return groupsOf(data.buildingGroups);
 }
 
-function persistAddresses() { store.set('addrs', addresses); }
+function persistAddresses() { store.set('addrs', addresses); if (android) void configureNative(); }
+
+function acceptNative(state) {
+  for (const address of addresses) {
+    const snapshot = state.snapshots?.[String(address.id)];
+    if (!snapshot) continue;
+    snapshots.set(String(address.id), snapshot);
+    store.set(`schedule:${address.id}`, snapshot);
+  }
+  if (state.lastBackgroundCheck) {
+    $('#backgroundStatus').textContent = `Остання фонова перевірка: ${timestamp(state.lastBackgroundCheck)} (Київ).`
+      + (state.backgroundFailures ? ' Частину графіків не вдалося оновити; спроба повториться.' : '');
+  } else $('#backgroundStatus').textContent = backgroundEnabled
+    ? 'Фонове оновлення ввімкнено. Перша автоматична перевірка — орієнтовно протягом 15 хвилин.'
+    : 'Фонове оновлення вимкнено.';
+  $('#backgroundTest').disabled = !backgroundEnabled || !addresses.length;
+  $('#notificationStatus').textContent = `Заплановано сповіщень: ${state.alarms?.filter(event => event.at > Date.now()).length ?? 0}.`;
+  render();
+}
+
+function configureNative() {
+  if (!android) return Promise.resolve();
+  const settings = { addresses: addresses.map(a => ({ id: String(a.id), cityId: String(a.cityId), streetId: String(a.streetId),
+    house: String(a.house), label: a.label })), lead, enabled: backgroundEnabled, notifyChanges,
+    seeds: Object.fromEntries(snapshots) };
+  nativeQueue = nativeQueue.catch(() => {}).then(() => BackgroundSync.configure(settings)).then(acceptNative).catch(error => {
+    log(`Фонове оновлення: ${error.message}`);
+    $('#backgroundStatus').textContent = 'Не вдалося налаштувати фонове оновлення. Спробуйте відкрити додаток знову.';
+  });
+  return nativeQueue;
+}
+
+async function readNativeState() {
+  if (!android) return;
+  try { await nativeQueue; acceptNative(await BackgroundSync.getState()); }
+  catch (error) { log(`Стан фонової перевірки: ${error.message}`); }
+}
 function cached(address) {
   const data = store.get(`schedule:${address.id}`, null);
   if (data?.schedules && Number.isFinite(data.fetchedAt)) snapshots.set(String(address.id), { ...data, stale: true });
@@ -90,6 +131,11 @@ async function refresh(address) {
   if (requests.has(id)) return requests.get(id);
   const job = (async () => {
     try {
+      if (android) {
+        await nativeQueue;
+        acceptNative(await BackgroundSync.refresh({ addressId: id }));
+        return;
+      }
       const groups = await getGroups(address);
       const { date } = kyivClock();
       let schedules = {};
@@ -345,6 +391,19 @@ function saveAddress(city, street, house) {
 let planning = Promise.resolve();
 function planAlerts() {
   if (!native) return Promise.resolve();
+  if (android) return nativeQueue.then(async () => {
+    try {
+      const permission = await LocalNotifications.checkPermissions();
+      if (permission.display !== 'granted') {
+        $('#notificationStatus').textContent = 'Сповіщення вимкнені. Натисніть «Увімкнути сповіщення».';
+        return;
+      }
+      const state = await BackgroundSync.getState();
+      acceptNative(state);
+      const exact = await LocalNotifications.checkExactNotificationSetting();
+      if (exact.exact_alarm !== 'granted') $('#notificationStatus').textContent += ' Android може затримувати їх. Дозвольте точні сигнали в налаштуваннях додатка.';
+    } catch (error) { log(`Сповіщення: ${error.message}`); }
+  });
   // Serialize replacements so an old refresh cannot restore cancelled notifications.
   planning = planning.catch(() => {}).then(async () => {
     try {
@@ -374,7 +433,31 @@ async function refreshAll() {
 }
 $('#addBtn').onclick = startWizard;
 $('#lead').value = String(lead);
-$('#lead').onchange = () => { lead = Number($('#lead').value); store.set('lead', lead); render(); void planAlerts(); };
+$('#lead').onchange = async () => { lead = Number($('#lead').value); store.set('lead', lead); render(); await configureNative(); await planAlerts(); };
+$('#backgroundOptions').hidden = !android;
+$('#backgroundEnabled').checked = backgroundEnabled;
+$('#notifyChanges').checked = notifyChanges;
+$('#backgroundEnabled').onchange = async event => {
+  backgroundEnabled = event.target.checked; store.set('backgroundEnabled', backgroundEnabled);
+  await configureNative(); await readNativeState();
+  if (backgroundEnabled) await refreshAll();
+};
+$('#notifyChanges').onchange = async event => {
+  notifyChanges = event.target.checked; store.set('notifyChanges', notifyChanges); await configureNative();
+};
+$('#backgroundSettings').onclick = async () => {
+  try { await BackgroundSync.openSettings(); } catch (error) { log(error.message); }
+};
+$('#backgroundTest').onclick = async () => {
+  try {
+    if ((await LocalNotifications.requestPermissions()).display !== 'granted') {
+      $('#backgroundStatus').textContent = 'Спочатку дозвольте сповіщення.'; return;
+    }
+    await configureNative();
+    await BackgroundSync.test();
+    $('#backgroundStatus').textContent = 'Згорніть додаток. Фонова перевірка запуститься орієнтовно через 30 секунд за наявності інтернету й надішле результат.';
+  } catch (error) { $('#backgroundStatus').textContent = error.message; }
+};
 $('#enableN').hidden = !native;
 $('#testN').hidden = !native;
 $('#notificationStatus').textContent = native ? 'Перевіряю налаштування сповіщень…' : 'Сповіщення доступні в Android-додатку.';
@@ -383,7 +466,7 @@ $('#enableN').onclick = async () => {
     await LocalNotifications.requestPermissions();
     const exact = await LocalNotifications.checkExactNotificationSetting();
     if (exact.exact_alarm !== 'granted') await LocalNotifications.changeExactNotificationSetting();
-    await refreshAll();
+    await configureNative(); await refreshAll();
   } catch (error) { log(`Дозвіл: ${error.message}`); }
 };
 $('#testN').onclick = async () => {
@@ -400,11 +483,22 @@ $('#copy').onclick = async () => {
   try { await navigator.clipboard.writeText($('#diag').textContent); $('#copy').textContent = 'Скопійовано'; }
   catch { $('#copy').textContent = 'Виділіть текст і скопіюйте вручну'; }
 };
-document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshAll(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { void readNativeState(); void refreshAll(); } });
 window.addEventListener('online', () => { void refreshAll(); });
-setInterval(() => { if (!document.hidden) render(); }, 30000);
+setInterval(() => { if (!document.hidden) { if (android) void readNativeState(); else render(); } }, 30000);
 setInterval(() => { if (!document.hidden) void refreshAll(); }, 5 * 60000);
 for (const address of addresses) cached(address);
 drawChips(); render();
 if (!addresses.length) startWizard();
-void refreshAll();
+async function start() {
+  if (android) {
+    // Migrate scheduled alerts from the old JS planner exactly once per launch.
+    try {
+      const old = (await LocalNotifications.getPending()).notifications.filter(n => n.id >= 1 && n.id <= 60);
+      if (old.length) await LocalNotifications.cancel({ notifications: old.map(n => ({ id: n.id })) });
+    } catch (error) { log(error.message); }
+    await configureNative();
+  }
+  await refreshAll();
+}
+void start();

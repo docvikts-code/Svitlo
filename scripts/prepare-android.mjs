@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, cp } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -8,9 +8,27 @@ if (!existsSync('android')) execFileSync(process.execPath, [cli, 'add', 'android
 execFileSync(process.execPath, [cli, 'sync', 'android'], { stdio: 'inherit' });
 const path = 'android/app/src/main/AndroidManifest.xml';
 let xml = await readFile(path, 'utf8');
-for (const permission of ['POST_NOTIFICATIONS', 'SCHEDULE_EXACT_ALARM']) {
+for (const permission of ['POST_NOTIFICATIONS', 'SCHEDULE_EXACT_ALARM', 'RECEIVE_BOOT_COMPLETED']) {
   if (!xml.includes(`android.permission.${permission}`)) {
     xml = xml.replace('<application', `<uses-permission android:name="android.permission.${permission}" />\n    <application`);
   }
 }
+if (!xml.includes('.OutageAlarmReceiver')) xml = xml.replace('</application>', `
+        <receiver android:name=".OutageAlarmReceiver" android:exported="false" />
+        <receiver android:name=".SyncRestartReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+    </application>`);
 await writeFile(path, xml);
+await cp('native/android/java', 'android/app/src/main/java', { recursive: true });
+await cp('native/android/res', 'android/app/src/main/res', { recursive: true });
+await cp('native/android/test', 'android/app/src/test/java', { recursive: true });
+const gradlePath = 'android/app/build.gradle';
+let gradle = await readFile(gradlePath, 'utf8');
+if (!gradle.includes('background.gradle')) gradle += "\napply from: '../../native/android/background.gradle'\n";
+await writeFile(gradlePath, gradle);

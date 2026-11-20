@@ -35,11 +35,22 @@
       <option value="60">1 годину</option>
       <option value="120">2 години</option>
     </select>
-    <p class="mut">В Android сповіщення плануються за останнім завантаженим графіком. Для врахування змін відкривайте додаток з інтернетом. У закритому додатку графік самостійно не оновлюється.</p>
+    <p class="mut">Попередження плануються за останнім отриманим графіком. В Android фонове оновлення враховує зміни, коли є інтернет.</p>
     <p class="mut" id="notificationStatus" role="status"></p>
     <div class="row">
       <button class="ghost" id="enableN" type="button" hidden>Увімкнути сповіщення</button>
       <button class="ghost" id="testN" type="button" hidden>Тестове сповіщення</button>
+    </div>
+  </section>
+  <section class="card" id="backgroundOptions" hidden>
+    <h2>Фонове оновлення</h2>
+    <label class="check"><input type="checkbox" id="backgroundEnabled"> Оновлювати графіки у фоні</label>
+    <label class="check"><input type="checkbox" id="notifyChanges"> Сповіщати про зміни графіка</label>
+    <p class="mut">Перевірка орієнтовно раз на 15 хвилин за наявності інтернету. Android може відкладати її для економії батареї. Після примусової зупинки додаток потрібно відкрити знову.</p>
+    <p id="backgroundStatus" class="mut" role="status"></p>
+    <div class="row">
+      <button type="button" class="ghost" id="backgroundTest">Тест фонової перевірки</button>
+      <button type="button" class="ghost" id="backgroundSettings">Налаштування роботи у фоні</button>
     </div>
   </section>
   <details class="card">

@@ -46,4 +46,6 @@ button.result{background:var(--bg);color:var(--ink);border:1px solid var(--line)
 a{color:var(--acc)}
 .notice{border-left:4px solid var(--maybe)}
 footer{padding:0 4px;font-size:13px;color:var(--mut)}
+.check{display:flex;align-items:center;gap:10px;margin-top:12px}
+.check input{width:20px;height:20px;flex:none;margin:0;accent-color:var(--acc)}
 @media(min-width:850px){main{max-width:760px}.big{font-size:28px}}
