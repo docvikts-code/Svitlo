@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { kyivClock, addDays, kyivMs, scheduleRequest, parseSchedules, statusInfo,
-  intervals, members, groupsOf, alertEvents } from '../src/core.js';
+  intervals, members, groupsOf, alertEvents, formatSourceTimestamp } from '../src/core.js';
 
 const date = '2026-11-20';
 const record = (dataJson, dateGraph = `${date}T00:00:00Z`, dateCreate = `${date}T08:00:00Z`) => ({ dataJson, dateGraph, dateCreate });
@@ -82,6 +82,20 @@ test('Kyiv date and alert timestamps respect midnight and seasonal UTC offsets',
   assert.equal(new Date(kyivMs(date, 13 * 60)).toISOString(), '2026-11-20T11:00:00.000Z');
   assert.equal(new Date(kyivMs('2026-07-20', 13 * 60)).toISOString(), '2026-07-20T10:00:00.000Z');
   assert.equal(new Date(kyivMs('2026-03-29', 60)).toISOString(), '2026-03-28T23:00:00.000Z');
+});
+
+test('provider update label matches the official site without an extra Kyiv offset', () => {
+  const winter = formatSourceTimestamp('2026-11-20T10:33:18Z');
+  assert.equal(winter, '20.11.2026, 10:33:18');
+  assert.equal(formatSourceTimestamp('2026-07-20T10:33:18Z'), '20.07.2026, 10:33:18');
+  assert.equal(formatSourceTimestamp('2026-11-20T23:33:18Z'), '20.11.2026, 23:33:18');
+  assert.equal(kyivClock(new Date('2026-11-20T23:33:18Z')).date, '2026-11-21');
+});
+
+test('missing or malformed provider update times are omitted', () => {
+  for (const value of [null, undefined, '', '   ', 'invalid', 0]) {
+    assert.equal(formatSourceTimestamp(value), null);
+  }
 });
 
 test('alerts merge possible/definite intervals and skip stale or wrong-date snapshots', () => {

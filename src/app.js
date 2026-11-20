@@ -1,7 +1,7 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { API_ORIGIN, TIME_ZONE, STATE_LABELS, members, groupsOf, kyivClock, addDays,
-  hhmm, duration, scheduleRequest, parseSchedules, intervals, statusInfo, alertEvents } from './core.js';
+  hhmm, duration, formatSourceTimestamp, scheduleRequest, parseSchedules, intervals, statusInfo, alertEvents } from './core.js';
 
 const $ = selector => document.querySelector(selector);
 const el = (tag, cls, text) => {
@@ -148,7 +148,8 @@ function dayCard(title, date, day, minute, stale) {
     card.append(el('p', 'mut', 'Графік для цієї підчерги ще не опубліковано.'));
     return card;
   }
-  if (day.updatedAt && Number.isFinite(Date.parse(day.updatedAt))) card.append(el('p', 'mut', `Оновлення джерела: ${timestamp(Date.parse(day.updatedAt))} (Київ)`));
+  const sourceStamp = formatSourceTimestamp(day.updatedAt);
+  if (sourceStamp) card.append(el('p', 'mut', `Оновлення на сайті обленерго: ${sourceStamp}`));
   if (stale) card.append(el('p', 'tMaybe', 'Збережений графік. Актуальність не підтверджена.'));
   const bar = el('div', 'bar');
   bar.setAttribute('aria-hidden', 'true');

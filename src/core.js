@@ -35,6 +35,19 @@ export function addDays(date, count) {
 export const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 export const duration = m => [m >= 60 && `${Math.floor(m / 60)} год`, m % 60 && `${m % 60} хв`].filter(Boolean).join(' ') || '0 хв';
 
+// The official site displays dateCreate with dayjs.utc(...). Match that source
+// label instead of converting this provider metadata to the Kyiv display clock.
+// This is display metadata only; schedule intervals and alerts use Kyiv time.
+export function formatSourceTimestamp(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat('uk-UA', {
+    timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).format(date);
+}
+
 // Convert a Kyiv wall-clock time using the offset at that instant, including DST.
 export function kyivMs(date, minute) {
   const wall = Date.parse(`${date}T00:00:00Z`) + minute * 60000;

@@ -46,6 +46,10 @@ try {
   await page.getByRole('heading', { name: 'Підчерга 2.1', exact: true }).waitFor({ timeout: 60000 });
   assert.ok(await page.locator('table.intervals').count() > 0);
   assert.ok(await page.locator('.bar i').count() >= 48);
+  if (!live) {
+    assert.equal(await page.getByText(/Оновлення на сайті обленерго: .*10:00:00/).count(), 1);
+    assert.equal(await page.getByText(/Оновлення джерела: .*\(Київ\)/).count(), 0);
+  }
   console.log(`PASS ${live ? 'live' : 'fixture'} address → queue → schedule`);
 
   await mkdir('test-results', { recursive: true });
