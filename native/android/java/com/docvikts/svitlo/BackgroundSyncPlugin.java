@@ -46,6 +46,16 @@ public class BackgroundSyncPlugin extends Plugin {
         catch (Exception error) { call.reject(error.getMessage(), error); }
     }
 
+    @PluginMethod public void consumeWidgetAddress(PluginCall call) {
+        String id = getActivity().getIntent().getStringExtra("svitlo.widget.address");
+        getActivity().getIntent().removeExtra("svitlo.widget.address");
+        JSObject result = new JSObject();
+        synchronized (SyncStore.LOCK) {
+            if (id != null && SyncStore.address(new SyncStore(getContext()).read(), id) != null) result.put("addressId", id);
+        }
+        call.resolve(result);
+    }
+
     @PluginMethod public void openSettings(PluginCall call) {
         try {
             Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getContext().getPackageName()));

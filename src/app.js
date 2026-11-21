@@ -116,6 +116,16 @@ function configureNative() {
   return nativeQueue;
 }
 
+async function openWidgetAddress(refreshNow = true) {
+  if (!android) return;
+  try {
+    const { addressId } = await BackgroundSync.consumeWidgetAddress();
+    if (!addresses.some(a => String(a.id) === addressId)) return;
+    if (refreshNow) await select(addressId);
+    else { selectedId = addressId; store.set('sel', selectedId); drawChips(); render(); }
+  } catch (error) { log(`Віджет: ${error.message}`); }
+}
+
 async function readNativeState() {
   if (!android) return;
   try { await nativeQueue; acceptNative(await BackgroundSync.getState()); }
@@ -500,6 +510,7 @@ $('#addBtn').onclick = startWizard;
 $('#lead').value = String(lead);
 $('#lead').onchange = async () => { lead = Number($('#lead').value); store.set('lead', lead); render(); await configureNative(); await planAlerts(); };
 $('#backgroundOptions').hidden = !android;
+$('#widgetHelp').hidden = !android;
 $('#backgroundEnabled').checked = backgroundEnabled;
 $('#notifyChanges').checked = notifyChanges;
 $('#backgroundEnabled').onchange = async event => {
@@ -549,6 +560,7 @@ $('#copy').onclick = async () => {
   catch { $('#copy').textContent = 'Виділіть текст і скопіюйте вручну'; }
 };
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { void readNativeState(); void refreshAll(); } });
+window.addEventListener('svitloWidgetOpen', () => { void openWidgetAddress(); });
 window.addEventListener('online', () => { void refreshAll(); });
 setInterval(() => { if (!document.hidden) { if (android) void readNativeState(); else render(); } }, 30000);
 setInterval(() => { if (!document.hidden) void refreshAll(); }, 5 * 60000);
@@ -563,6 +575,7 @@ async function start() {
       if (old.length) await LocalNotifications.cancel({ notifications: old.map(n => ({ id: n.id })) });
     } catch (error) { log(error.message); }
     await configureNative();
+    await openWidgetAddress(false);
   }
   await refreshAll();
 }

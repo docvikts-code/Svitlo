@@ -24,6 +24,19 @@ if (!xml.includes('.OutageAlarmReceiver')) xml = xml.replace('</application>', `
             </intent-filter>
         </receiver>
     </application>`);
+if (!xml.includes('.ScheduleWidgetProvider')) xml = xml.replace('</application>', `
+        <receiver android:name=".ScheduleWidgetProvider" android:exported="false" android:label="Світло · графік">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_wide_info" />
+        </receiver>
+        <receiver android:name=".CompactWidgetProvider" android:exported="false" android:label="Світло · компактний">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_compact_info" />
+        </receiver>
+        <activity android:name=".WidgetConfigureActivity" android:exported="true" android:theme="@android:style/Theme.DeviceDefault.DayNight" android:label="Віджет Svitlo">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" /></intent-filter>
+        </activity>
+    </application>`);
 await writeFile(path, xml);
 await cp('native/android/java', 'android/app/src/main/java', { recursive: true });
 await cp('native/android/res', 'android/app/src/main/res', { recursive: true });
