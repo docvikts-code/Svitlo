@@ -95,7 +95,9 @@ public final class ScheduleWidgets {
         view.setTextViewText(R.id.widget_remaining, data.remaining);
         view.setViewVisibility(R.id.widget_time, data.time.equals("—") ? View.GONE : View.VISIBLE);
         view.setViewVisibility(R.id.widget_next, data.next.isEmpty() ? View.GONE : View.VISIBLE);
-        view.setViewVisibility(R.id.widget_remaining, compact || data.remaining.isEmpty() ? View.GONE : View.VISIBLE);
+        Bundle options = AppWidgetManager.getInstance(c).getAppWidgetOptions(id);
+        boolean roomy = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 190) >= 215;
+        view.setViewVisibility(R.id.widget_remaining, compact || !roomy || data.remaining.isEmpty() ? View.GONE : View.VISIBLE);
         view.setTextViewText(R.id.widget_checked, refreshing ? "Запит на оновлення…" : data.checked);
         int color = data.stale || data.value == null ? R.color.widget_muted : data.value == 0 ? R.color.widget_on : data.value == 1 ? R.color.widget_off : R.color.widget_maybe;
         view.setTextColor(R.id.widget_status, c.getColor(color));

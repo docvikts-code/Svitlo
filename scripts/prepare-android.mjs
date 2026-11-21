@@ -33,10 +33,11 @@ if (!xml.includes('.ScheduleWidgetProvider')) xml = xml.replace('</application>'
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_compact_info" />
         </receiver>
-        <activity android:name=".WidgetConfigureActivity" android:exported="true" android:theme="@android:style/Theme.DeviceDefault.DayNight" android:label="Віджет Svitlo">
+        <activity android:name=".WidgetConfigureActivity" android:exported="true" android:theme="@style/WidgetConfigureTheme" android:label="Віджет Svitlo">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" /></intent-filter>
         </activity>
     </application>`);
+xml = xml.replace('@android:style/Theme.DeviceDefault.DayNight', '@style/WidgetConfigureTheme');
 await writeFile(path, xml);
 await cp('native/android/java', 'android/app/src/main/java', { recursive: true });
 await cp('native/android/res', 'android/app/src/main/res', { recursive: true });

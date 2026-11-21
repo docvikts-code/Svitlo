@@ -78,6 +78,24 @@ public class ScheduleWidgetsTest {
         new ScheduleWidgetProvider().onDeleted(context, new int[] { 11 });
         assertEquals("b", ScheduleWidgets.preferences(context).getString("12:address", null));
     }
+    @Test public void widgetTapTargetsItsOwnAddressOrItsConfiguration() {
+        bind(11, false);
+        JSONObject state = new SyncStore(context).read();
+        WidgetData data = WidgetData.from(state, "b", "4.1", System.currentTimeMillis());
+        Intent open = Shadows.shadowOf(ScheduleWidgets.open(context, 11, data)).getSavedIntent();
+        assertEquals(MainActivity.class.getName(), open.getComponent().getClassName());
+        assertEquals("b", open.getStringExtra("svitlo.widget.address"));
+        WidgetData empty = WidgetData.from(state, null, null, System.currentTimeMillis());
+        Intent configure = Shadows.shadowOf(ScheduleWidgets.open(context, 11, empty)).getSavedIntent();
+        assertEquals(WidgetConfigureActivity.class.getName(), configure.getComponent().getClassName());
+        assertEquals(11, configure.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1));
+    }
+    @Test @Config(qualifiers = "night") public void darkThemeRendersNativeWidgetWithNightResources() {
+        bind(12, true); assertTrue(ScheduleWidgets.choose(context, 12, "a", "2.1"));
+        assertEquals(android.graphics.Color.parseColor("#15232C"), context.getColor(R.color.widget_surface));
+        assertEquals("Світло є", text(12, R.id.widget_status));
+        assertEquals(context.getColor(R.color.widget_on), ((TextView) shadow.getViewFor(12).findViewById(R.id.widget_status)).getCurrentTextColor());
+    }
     public static class TestRefreshWorker extends WidgetRefreshWorker {
         public TestRefreshWorker(Context c, WorkerParameters p) { super(c, p); }
         @Override protected PoweronClient client() { return fake; }

@@ -1,0 +1,5 @@
+<resources><style name="WidgetConfigureTheme" parent="android:style/Theme.Material.NoActionBar">
+ <item name="android:windowBackground">@color/widget_surface</item><item name="android:colorAccent">@color/widget_on</item>
+ <item name="android:statusBarColor">@color/widget_surface</item><item name="android:navigationBarColor">@color/widget_surface</item>
+ <item name="android:windowLightStatusBar">false</item>
+</style></resources>
