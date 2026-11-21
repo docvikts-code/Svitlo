@@ -1,9 +1,15 @@
-name: Build APK
+name: Test and build APK
 on:
   push:
   workflow_dispatch:
+
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: svitlo-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -12,25 +18,57 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
-      - name: Prepare project
-        run: |
-          mkdir -p www
-          cp svitlo-ternopil.html www/index.html
-          npm init -y
-          npm install @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7 @capacitor/local-notifications@7
-          echo '{"appId":"com.docvikts.svitlo","appName":"Svitlo","webDir":"www","plugins":{"CapacitorHttp":{"enabled":true}}}' > capacitor.config.json
-          npx cap add android
-          sed -i 's#<application#<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />\n    <application#' android/app/src/main/AndroidManifest.xml
+      - run: npm ci
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: svitlo-ui-check
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+      - run: npm run android:prepare
       - name: Build APK
-        run: |
-          chmod +x android/gradlew
-          cd android && ./gradlew assembleDebug
+        working-directory: android
+        run: ./gradlew testDebugUnitTest assembleDebug
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: svitlo-android-tests
+          path: android/app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: svitlo-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: svitlo-web
+          path: www/
+          retention-days: 14
+
+  release:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: svitlo-android-debug
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: Svitlo build ${{ github.run_number }}
-          files: android/app/build/outputs/apk/debug/app-debug.apk
+          files: app-debug.apk
