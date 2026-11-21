@@ -34,6 +34,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1100, height: 1000 } });
   const page = await context.newPage();
+  await page.clock.setFixedTime(new Date('2026-11-21T10:08:00Z'));
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(base);
@@ -50,18 +51,53 @@ try {
     assert.equal(await page.getByText(/Оновлення на сайті обленерго: .*10:00:00/).count(), 1);
     assert.equal(await page.getByText(/Оновлення джерела: .*\(Київ\)/).count(), 0);
   }
-  console.log(`PASS ${live ? 'live' : 'fixture'} address → queue → schedule`);
+  assert.equal(await page.locator('#settingsDialog').evaluate(node => node.open), false);
+  assert.equal(await page.locator('#lead').isVisible(), false);
+  assert.equal(await page.locator('#addBtn').isVisible(), false);
+  assert.equal(await page.locator('.now-label').innerText(), '12:08');
+  assert.equal(await page.locator('.current-interval').count(), 1);
+  console.log(`PASS ${live ? 'live' : 'fixture'} address → queue → schedule; clean home and current-time marker`);
 
   await mkdir('test-results', { recursive: true });
   await page.screenshot({ path: 'test-results/desktop.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: 'test-results/mobile.png', fullPage: true });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
-  console.log('PASS mobile 390px: no horizontal overflow');
+  await page.setViewportSize({ width: 320, height: 740 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  for (const time of ['2026-11-21T22:01:00Z', '2026-11-21T21:59:00Z']) {
+    await page.clock.setFixedTime(new Date(time));
+    await page.getByRole('button', { name: 'Оновити графік', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('#refreshBtn').disabled);
+    const bounds = await page.locator('.now-label').evaluate(node => {
+      const label = node.getBoundingClientRect(), track = node.parentElement.getBoundingClientRect();
+      return { left: label.left, right: label.right, start: track.left, end: track.right };
+    });
+    assert.ok(bounds.left >= bounds.start && bounds.right <= bounds.end, JSON.stringify(bounds));
+  }
+  await page.clock.setFixedTime(new Date('2026-11-21T10:08:00Z'));
+  await page.getByRole('button', { name: 'Оновити графік', exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('#refreshBtn').disabled);
+  console.log('PASS mobile 390/320px and marker labels at both midnight edges');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.screenshot({ path: 'test-results/mobile-dark.png', fullPage: true });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.getByRole('button', { name: 'Налаштування', exact: true }).click();
+  assert.equal(await page.locator('#lead').isVisible(), true);
+  assert.equal(await page.locator('#addBtn').isVisible(), true);
+  await page.locator('#lead').selectOption('60');
+  await page.screenshot({ path: 'test-results/settings-mobile.png', fullPage: true });
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#settingsDialog').evaluate(node => node.open), false);
+  assert.equal(await page.locator('#settingsBtn').evaluate(node => node === document.activeElement), true);
+  console.log('PASS gear opens settings; preferences persist; Escape restores focus');
 
   await page.reload();
-  await page.waitForFunction(() => document.querySelector('#view .ghost')?.textContent === 'Оновити', { timeout: 60000 });
-  assert.equal(await page.locator('#chips button').count(), 1);
+  await page.waitForFunction(() => !document.querySelector('#refreshBtn').disabled, { timeout: 60000 });
+  assert.equal(await page.locator('#addressSelect option').count(), 1);
+  assert.equal(await page.locator('#lead').inputValue(), '60');
   console.log('PASS saved address survives reload');
   await page.route('**/api/**', route => route.abort());
   await page.reload();
@@ -99,11 +135,11 @@ try {
     await route.fulfill({ json: data });
   });
   await second.goto(base);
-  await second.getByRole('button', { name: 'Адреса Б', exact: true }).click();
+  await second.locator('#addressSelect').selectOption('b');
   await second.getByRole('heading', { name: 'Підчерга 3.1', exact: true }).waitFor({ timeout: 10000 });
   // Wait for the slow, earlier address request to finish after the new selection.
   await second.waitForTimeout(1600);
-  assert.equal(await second.getByRole('heading', { name: 'Адреса Б', exact: true }).count(), 1);
+  assert.equal(await second.locator('#addressSelect').inputValue(), 'b');
   assert.equal(await second.getByRole('heading', { name: 'Підчерга 1.1', exact: true }).count(), 0);
   assert.equal(await second.locator('.bar i').count(), 96);
   assert.equal(await second.getByText('Графік для цієї підчерги ще не опубліковано.', { exact: true }).count(), 2);

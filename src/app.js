@@ -171,14 +171,29 @@ function button(text, action, cls = 'ghost') {
   return node;
 }
 
+function showSettings() {
+  if (!$('#settingsDialog').open) $('#settingsDialog').showModal();
+}
+function hideSettings() { $('#settingsDialog').close(); }
+
 function drawChips() {
+  const picker = $('#addressSelect');
+  picker.replaceChildren();
+  picker.disabled = !addresses.length;
+  if (!addresses.length) picker.append(new Option('Додайте адресу в налаштуваннях', ''));
+  for (const address of addresses) picker.append(new Option(address.label, String(address.id)));
+  picker.value = selectedId;
   const chips = $('#chips');
   chips.replaceChildren();
-  if (!addresses.length) chips.append(el('span', 'mut', 'Додайте будинок, щоб побачити його графік.'));
+  if (!addresses.length) chips.append(el('p', 'mut', 'Додайте будинок, щоб побачити його графік.'));
   for (const address of addresses) {
-    const node = button(address.label, () => select(address.id), 'chip');
+    const row = el('div', 'address-row');
+    const node = button(address.label, () => { hideSettings(); void select(address.id); }, 'chip');
     node.setAttribute('aria-pressed', String(String(address.id) === selectedId));
-    chips.append(node);
+    const removeButton = button('×', () => remove(address.id), 'remove-address');
+    removeButton.setAttribute('aria-label', `Видалити адресу: ${address.label}`);
+    row.append(node, removeButton);
+    chips.append(row);
   }
 }
 
@@ -187,16 +202,30 @@ function timestamp(ms) {
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
 }
 
-function dayCard(title, date, day, minute, stale) {
+function dayCard(title, date, day, minute, stale, info, snapshot) {
   const card = el('section', 'card day');
-  card.append(el('h3', null, `${title}, ${date.slice(8)}.${date.slice(5, 7)}`));
+  const heading = el('div', 'day-header');
+  const dayHeading = el('h3', null, title);
+  dayHeading.append(el('span', 'day-date', `${date.slice(8)}.${date.slice(5, 7)}`));
+  heading.append(dayHeading, el('span', 'day-badge', 'Час за Києвом'));
+  card.append(heading);
   if (!day || day.slots.every(s => s == null)) {
-    card.append(el('p', 'mut', 'Графік для цієї підчерги ще не опубліковано.'));
+    const empty = el('div', 'day-empty');
+    empty.append(el('span', 'empty-dash', '—'), el('p', null, 'Графік для цієї підчерги ще не опубліковано.'));
+    card.append(empty);
     return card;
   }
-  const sourceStamp = formatSourceTimestamp(day.updatedAt);
-  if (sourceStamp) card.append(el('p', 'mut', `Оновлення на сайті обленерго: ${sourceStamp}`));
-  if (stale) card.append(el('p', 'tMaybe', 'Збережений графік. Актуальність не підтверджена.'));
+  if (info) {
+    const status = el('div', 'schedule-status');
+    status.dataset.state = String(info.state);
+    status.append(el('p', 'status-kicker', 'Зараз за графіком'),
+      el('div', `big ${info.state === 1 ? 'tOff' : info.state === 0 ? 'tOn' : info.state === 10 ? 'tMaybe' : ''}`,
+        { 0: 'Світло є', 1: 'Відключення', 10: 'Можливе відключення' }[info.state] ?? 'Немає даних'),
+      el('p', 'status-detail', info.text));
+    card.append(status);
+  }
+  if (stale) card.append(el('p', 'mut', 'Збережений графік. Актуальність не підтверджена.'));
+  const timeline = el('div', 'timeline');
   const bar = el('div', 'bar');
   bar.setAttribute('aria-hidden', 'true');
   for (let i = 0; i < 48; i++) {
@@ -205,28 +234,54 @@ function dayCard(title, date, day, minute, stale) {
     cell.title = `${hhmm(i * 30)}–${hhmm((i + 1) * 30)}: ${STATE_LABELS[value] ?? 'немає даних'}`;
     bar.append(cell);
   }
+  timeline.append(bar);
   if (minute != null && !stale) {
     const marker = el('b', 'now');
     marker.style.left = `${minute / 14.4}%`;
-    bar.append(marker);
+    marker.setAttribute('aria-hidden', 'true');
+    const label = el('span', 'now-label', hhmm(minute));
+    label.style.left = `clamp(27px, ${minute / 14.4}%, calc(100% - 27px))`;
+    label.setAttribute('aria-label', `Зараз ${hhmm(minute)} за Києвом`);
+    timeline.append(marker, label);
   }
   const axis = el('div', 'axis');
+  axis.setAttribute('aria-hidden', 'true');
   for (const t of ['00', '06', '12', '18', '24']) axis.append(el('span', null, t));
-  card.append(bar, axis);
-  const legend = el('p', 'mut legend', '🟢 За графіком є · 🔴 Відключення · 🟡 Можливе · ⚪ Немає даних');
+  card.append(timeline, axis);
+  const legend = el('div', 'legend');
+  for (const [value, text] of [[0, 'Є'], [1, 'Відключення'], [10, 'Можливе'], [null, 'Немає даних']]) {
+    const item = el('span');
+    const swatch = el('i', value == null ? '' : `key${value}`);
+    swatch.setAttribute('aria-hidden', 'true');
+    item.append(swatch, document.createTextNode(text));
+    legend.append(item);
+  }
   card.append(legend);
   const table = el('table', 'intervals');
   const caption = el('caption', 'sr-only', `Усі інтервали: ${title}`);
   const body = el('tbody');
   for (const interval of intervals(day.slots)) {
-    const row = el('tr');
-    const label = el('td', `t${interval.value === 1 ? 'Off' : interval.value === 10 ? 'Maybe' : interval.value === 0 ? 'On' : ''}`,
-      STATE_LABELS[interval.value] ?? 'Немає даних');
-    row.append(el('th', null, `${hhmm(interval.start)}–${hhmm(interval.end)}`), label);
+    const current = !stale && minute != null && minute >= interval.start && minute < interval.end;
+    const row = el('tr', current ? 'current-interval' : '');
+    const time = el('th', null, `${hhmm(interval.start)}–${hhmm(interval.end)}`);
+    time.scope = 'row';
+    if (current) { row.setAttribute('aria-current', 'time'); time.append(el('span', 'current-tag', 'Зараз')); }
+    const label = el('td', `t${interval.value === 1 ? 'Off' : interval.value === 10 ? 'Maybe' : interval.value === 0 ? 'On' : ''}`);
+    const state = el('span', 'interval-state');
+    const dot = el('i', interval.value == null ? 'interval-dot' : `interval-dot dot${interval.value}`);
+    dot.setAttribute('aria-hidden', 'true');
+    state.append(dot, document.createTextNode({ 0: 'Є за графіком', 1: 'Відключення', 10: 'Можливе відключення' }[interval.value] ?? 'Немає даних'));
+    label.append(state);
+    row.append(time, label);
     body.append(row);
   }
   table.append(caption, body);
   card.append(table);
+  const source = el('div', 'source-time');
+  const sourceStamp = formatSourceTimestamp(day.updatedAt);
+  if (sourceStamp) source.append(el('p', null, `Оновлення на сайті обленерго: ${sourceStamp}`));
+  if (snapshot?.fetchedAt) source.append(el('p', null, `Перевірено: ${timestamp(snapshot.fetchedAt)} (Київ)`));
+  card.append(source);
   return card;
 }
 
@@ -234,20 +289,20 @@ function render() {
   const view = $('#view');
   view.replaceChildren();
   const address = addresses.find(a => String(a.id) === selectedId);
-  if (!address) return;
-  const snapshot = snapshots.get(selectedId);
   const loading = requests.has(selectedId);
-  const header = el('section', 'card');
-  header.append(el('h2', null, address.label));
-  if (snapshot?.fetchedAt) header.append(el('p', 'mut', `Отримано: ${timestamp(snapshot.fetchedAt)} (Київ)`));
-  const actions = el('div', 'row');
-  const reload = button(loading ? 'Оновлюю…' : 'Оновити', async () => { await refresh(address); await planAlerts(); });
-  reload.disabled = loading;
-  actions.append(reload, button('Видалити адресу', () => remove(address.id)));
-  header.append(actions);
-  view.append(header);
+  $('#refreshBtn').disabled = !address || loading;
+  $('#refreshBtn').setAttribute('aria-busy', String(loading));
+  if (!address) {
+    const empty = el('section', 'card empty-view');
+    empty.append(el('h2', null, 'Графік для вашого будинку'),
+      el('p', 'mut', 'Додайте адресу, щоб бачити відключення на сьогодні й завтра.'),
+      button('Додати адресу', startWizard));
+    view.append(empty);
+    return;
+  }
+  const snapshot = snapshots.get(selectedId);
   if (!snapshot?.schedules) {
-    view.append(el('p', 'card', loading ? 'Завантажую графік…' : snapshot?.error ?? 'Немає даних. Натисніть «Оновити».'));
+    view.append(el('p', 'card', loading ? 'Завантажую графік…' : snapshot?.error ?? 'Немає даних. Натисніть кнопку оновлення біля адреси.'));
     return;
   }
   const { date, min } = kyivClock();
@@ -265,20 +320,14 @@ function render() {
     view.append(el('p', 'card', 'Для цього будинку обленерго не вказало підчергу ГПВ. Перевірте адресу на офіційному сайті.'));
     return;
   }
-  if (groups.length > 1) view.append(el('p', 'card', 'Будинок має кілька підчерг. Показуємо окремий графік кожної: конкретне підключення може відрізнятися.'));
+  if (groups.length > 1) view.append(el('p', 'mut', 'Будинок має кілька підчерг. Нижче — окремий графік кожної.'));
   for (const [group, days] of Object.entries(snapshot.schedules)) {
-    const section = el('div', 'queue');
+    const section = el('section', 'queue');
+    section.setAttribute('aria-label', `Графіки підчерги ${group}`);
     section.append(el('h2', 'queue-title', `Підчерга ${group}`));
-    if (!stale) {
-      const info = statusInfo(days, date, min);
-      const status = el('section', 'card');
-      status.append(el('div', `big ${info.state === 1 ? 'tOff' : info.state === 0 ? 'tOn' : info.state === 10 ? 'tMaybe' : ''}`,
-        STATE_LABELS[info.state] ?? 'Немає даних'), el('p', null, info.text));
-      if (info.until != null && info.until <= lead) status.classList.add('warn');
-      section.append(status);
-    }
-    section.append(dayCard('Сьогодні', date, days[date], min, stale),
-      dayCard('Завтра', addDays(date, 1), days[addDays(date, 1)], null, stale));
+    const info = stale ? null : statusInfo(days, date, min);
+    section.append(dayCard('Сьогодні', date, days[date], min, stale, info, snapshot),
+      dayCard('Завтра', addDays(date, 1), days[addDays(date, 1)], null, stale, null, snapshot));
     view.append(section);
   }
 }
@@ -349,6 +398,7 @@ function searchStep(title, placeholder, minimum, load, label, done, back) {
   input.focus();
 }
 function startWizard() {
+  showSettings();
   searchStep('1. Населений пункт', 'Назва, наприклад Бережани', 2,
     async query => members(await api(`/pw_cities?${new URLSearchParams({ pagination: 'false', name: query })}`))
       .filter(city => normalize(city.name).includes(normalize(query))),
@@ -385,6 +435,7 @@ function saveAddress(city, street, house) {
   if (!existing) addresses.push(address);
   persistAddresses();
   closeWizard();
+  hideSettings();
   void select(address.id);
 }
 
@@ -431,6 +482,19 @@ async function refreshAll() {
   for (const address of [...addresses]) await refresh(address);
   await planAlerts();
 }
+$('#settingsBtn').onclick = showSettings;
+$('#closeSettings').onclick = hideSettings;
+$('#settingsDialog').addEventListener('close', closeWizard);
+$('#settingsDialog').addEventListener('click', event => {
+  if (event.target !== $('#settingsDialog')) return;
+  const bounds = $('#settingsDialog').getBoundingClientRect();
+  if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) hideSettings();
+});
+$('#addressSelect').onchange = event => { void select(event.target.value); };
+$('#refreshBtn').onclick = async () => {
+  const address = addresses.find(a => String(a.id) === selectedId);
+  if (address) { await refresh(address); await planAlerts(); }
+};
 $('#addBtn').onclick = startWizard;
 $('#lead').value = String(lead);
 $('#lead').onchange = async () => { lead = Number($('#lead').value); store.set('lead', lead); render(); await configureNative(); await planAlerts(); };

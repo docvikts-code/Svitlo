@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1b4b6b">
+  <meta name="theme-color" content="#edf3f5">
   <meta name="description" content="Графіки погодинних відключень на Тернопільщині за вашою адресою.">
   <title>Світло: Тернопільщина</title>
   <link rel="stylesheet" href="./style.css">
@@ -11,55 +11,46 @@
 </head>
 <body>
 <main>
-  <header>
-    <h1>Світло на Тернопільщині</h1>
-    <p class="mut">Графік відключень за вашою адресою · час за Києвом</p>
+  <header class="app-header">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">ϟ</span><div><h1>Світло</h1><p>Тернопільщина</p></div></div>
+    <button id="settingsBtn" class="icon-button" type="button" aria-label="Налаштування" aria-haspopup="dialog" aria-controls="settingsDialog">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m9.4 3-.5 2a8 8 0 0 0-1.6.9l-2-.6-2.6 4.4 1.5 1.5a8 8 0 0 0 0 1.8l-1.5 1.5 2.6 4.4 2-.6a8 8 0 0 0 1.6.9l.5 2h5.2l.5-2a8 8 0 0 0 1.6-.9l2 .6 2.6-4.4-1.5-1.5a8 8 0 0 0 0-1.8l1.5-1.5-2.6-4.4-2 .6a8 8 0 0 0-1.6-.9l-.5-2Z"/><circle cx="12" cy="12" r="3.1"/></svg>
+    </button>
   </header>
-  <aside class="card notice">
-    Це планові графіки ГПВ. Фактичне електропостачання може відрізнятися через аварійні відключення або зміни графіка.
-    <a href="https://poweron.toe.com.ua/" target="_blank" rel="noopener noreferrer">Перевірити на сайті обленерго ↗</a>
-  </aside>
   <p id="storageNote" class="card warn" role="status" hidden>Браузер не дозволив зберегти дані. Після закриття адреси можуть не зберегтися.</p>
-  <section class="card" aria-labelledby="addressesTitle">
-    <h2 id="addressesTitle">Мої адреси</h2>
-    <div class="chips" id="chips"></div>
-    <button id="addBtn" type="button">Додати адресу</button>
+  <section class="address-picker" aria-label="Вибір адреси">
+    <div class="address-field"><label for="addressSelect">Моя адреса</label><select id="addressSelect" aria-label="Вибрати адресу"></select></div>
+    <button id="refreshBtn" class="icon-button refresh-button" type="button" aria-label="Оновити графік">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10a8 8 0 1 0-2 7M20 4v6h-6"/></svg>
+    </button>
   </section>
-  <section class="card" id="wiz" aria-label="Додавання адреси" hidden></section>
-  <div id="view" style="display:grid;gap:12px" aria-live="polite"></div>
-  <section class="card">
-    <label for="lead"><b>Попереджати за</b></label>
-    <select id="lead">
-      <option value="15">15 хвилин</option>
-      <option value="30">30 хвилин</option>
-      <option value="60">1 годину</option>
-      <option value="120">2 години</option>
-    </select>
-    <p class="mut">Попередження плануються за останнім отриманим графіком. В Android фонове оновлення враховує зміни, коли є інтернет.</p>
-    <p class="mut" id="notificationStatus" role="status"></p>
-    <div class="row">
-      <button class="ghost" id="enableN" type="button" hidden>Увімкнути сповіщення</button>
-      <button class="ghost" id="testN" type="button" hidden>Тестове сповіщення</button>
-    </div>
-  </section>
-  <section class="card" id="backgroundOptions" hidden>
-    <h2>Фонове оновлення</h2>
-    <label class="check"><input type="checkbox" id="backgroundEnabled"> Оновлювати графіки у фоні</label>
-    <label class="check"><input type="checkbox" id="notifyChanges"> Сповіщати про зміни графіка</label>
-    <p class="mut">Перевірка орієнтовно раз на 15 хвилин за наявності інтернету. Android може відкладати її для економії батареї. Після примусової зупинки додаток потрібно відкрити знову.</p>
-    <p id="backgroundStatus" class="mut" role="status"></p>
-    <div class="row">
-      <button type="button" class="ghost" id="backgroundTest">Тест фонової перевірки</button>
-      <button type="button" class="ghost" id="backgroundSettings">Налаштування роботи у фоні</button>
-    </div>
-  </section>
-  <details class="card">
-    <summary>Технічні дані</summary>
-    <pre id="diag">Запитів ще не було</pre>
-    <button class="ghost" id="copy" type="button">Копіювати</button>
-  </details>
+  <div id="view" aria-live="polite"></div>
   <noscript><p class="card warn">Для роботи додатка увімкніть JavaScript.</p></noscript>
-  <footer>Svitlo · неофіційний додаток · дані АТ «Тернопільобленерго»</footer>
 </main>
+<dialog id="settingsDialog" aria-labelledby="settingsTitle">
+  <div class="settings-header"><h2 id="settingsTitle">Налаштування</h2><button id="closeSettings" class="icon-button" type="button" aria-label="Закрити налаштування"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+  <div class="settings-body">
+    <section class="card" aria-labelledby="addressesTitle"><h3 id="addressesTitle">Мої адреси</h3><div class="address-list" id="chips"></div><button id="addBtn" type="button">Додати адресу</button></section>
+    <section class="card" id="wiz" aria-label="Додавання адреси" hidden></section>
+    <section class="card">
+      <h3>Сповіщення</h3><label class="field-label" for="lead">Попереджати за</label>
+      <select id="lead"><option value="15">15 хвилин</option><option value="30">30 хвилин</option><option value="60">1 годину</option><option value="120">2 години</option></select>
+      <p class="mut">Попередження плануються за останнім отриманим графіком. В Android фонове оновлення враховує зміни, коли є інтернет.</p>
+      <p class="mut" id="notificationStatus" role="status"></p>
+      <div class="row"><button class="ghost" id="enableN" type="button" hidden>Увімкнути сповіщення</button><button class="ghost" id="testN" type="button" hidden>Тестове сповіщення</button></div>
+    </section>
+    <section class="card" id="backgroundOptions" hidden>
+      <h3>Фонове оновлення</h3>
+      <label class="check"><input type="checkbox" id="backgroundEnabled"> Оновлювати графіки у фоні</label>
+      <label class="check"><input type="checkbox" id="notifyChanges"> Сповіщати про зміни графіка</label>
+      <p class="mut">Перевірка орієнтовно раз на 15 хвилин за наявності інтернету. Android може відкладати її для економії батареї. Після примусової зупинки додаток потрібно відкрити знову.</p>
+      <p id="backgroundStatus" class="mut" role="status"></p>
+      <div class="row"><button type="button" class="ghost" id="backgroundTest">Тест фонової перевірки</button><button type="button" class="ghost" id="backgroundSettings">Налаштування роботи у фоні</button></div>
+    </section>
+    <section class="card about"><h3>Про графіки</h3><p class="mut">Це планові графіки ГПВ. Фактичне електропостачання може відрізнятися через аварійні відключення або зміни графіка.</p><a href="https://poweron.toe.com.ua/" target="_blank" rel="noopener noreferrer">Сайт обленерго ↗</a></section>
+    <details class="card"><summary>Технічні дані</summary><pre id="diag">Запитів ще не було</pre><button class="ghost" id="copy" type="button">Копіювати</button></details>
+    <footer>Svitlo 0.4.0 · неофіційний додаток<br>Дані АТ «Тернопільобленерго» · час за Києвом</footer>
+  </div>
+</dialog>
 </body>
 </html>
