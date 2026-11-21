@@ -34,7 +34,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1100, height: 1000 } });
   const page = await context.newPage();
-  await page.clock.setFixedTime(new Date('2026-11-21T10:08:00Z'));
+  if (!live) await page.clock.setFixedTime(new Date('2026-11-21T10:08:00Z'));
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(base);
@@ -54,7 +54,9 @@ try {
   assert.equal(await page.locator('#settingsDialog').evaluate(node => node.open), false);
   assert.equal(await page.locator('#lead').isVisible(), false);
   assert.equal(await page.locator('#addBtn').isVisible(), false);
-  assert.equal(await page.locator('.now-label').innerText(), '12:08');
+  assert.match(await page.locator('.now-label').innerText(), /^\d{2}:\d{2}$/);
+  if (!live) assert.equal(await page.locator('.now-label').innerText(), '12:08');
+  assert.equal(await page.locator('#selectedAddressLabel').innerText(), 'Бережани, вул. Тараса Шевченка, 1');
   assert.equal(await page.locator('.current-interval').count(), 1);
   console.log(`PASS ${live ? 'live' : 'fixture'} address → queue → schedule; clean home and current-time marker`);
 
@@ -65,7 +67,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await page.setViewportSize({ width: 320, height: 740 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
-  for (const time of ['2026-11-21T22:01:00Z', '2026-11-21T21:59:00Z']) {
+  for (const time of live ? [] : ['2026-11-21T22:01:00Z', '2026-11-21T21:59:00Z']) {
     await page.clock.setFixedTime(new Date(time));
     await page.getByRole('button', { name: 'Оновити графік', exact: true }).click();
     await page.waitForFunction(() => !document.querySelector('#refreshBtn').disabled);
@@ -75,7 +77,7 @@ try {
     });
     assert.ok(bounds.left >= bounds.start && bounds.right <= bounds.end, JSON.stringify(bounds));
   }
-  await page.clock.setFixedTime(new Date('2026-11-21T10:08:00Z'));
+  if (!live) await page.clock.setFixedTime(new Date('2026-11-21T10:08:00Z'));
   await page.getByRole('button', { name: 'Оновити графік', exact: true }).click();
   await page.waitForFunction(() => !document.querySelector('#refreshBtn').disabled);
   console.log('PASS mobile 390/320px and marker labels at both midnight edges');

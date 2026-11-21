@@ -183,6 +183,7 @@ function drawChips() {
   if (!addresses.length) picker.append(new Option('Додайте адресу в налаштуваннях', ''));
   for (const address of addresses) picker.append(new Option(address.label, String(address.id)));
   picker.value = selectedId;
+  $('#selectedAddressLabel').textContent = addresses.find(a => String(a.id) === selectedId)?.label ?? 'Додайте адресу в налаштуваннях';
   const chips = $('#chips');
   chips.replaceChildren();
   if (!addresses.length) chips.append(el('p', 'mut', 'Додайте будинок, щоб побачити його графік.'));
