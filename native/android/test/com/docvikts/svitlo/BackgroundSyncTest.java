@@ -62,11 +62,19 @@ public class BackgroundSyncTest {
         android.app.Notification firstNotice = Shadows.shadowOf(context.getSystemService(NotificationManager.class)).getAllNotifications().get(0);
         JSONObject state = new SyncStore(context).read();
         assertTrue(state.getLong("lastBackgroundSuccess") > 0);
+        String message = firstNotice.extras.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT).toString();
+        assertTrue(message.contains("Світла за графіком менше на 24 год"));
+        JSONObject comparison = state.getJSONObject("snapshots").getJSONObject("a").getJSONObject("schedules").getJSONObject("2.1")
+            .getJSONObject(ScheduleLogic.today(System.currentTimeMillis())).getJSONObject("comparison");
+        assertEquals(1440, comparison.getJSONObject("before").getInt("on"));
+        assertEquals(0, comparison.getJSONObject("after").getInt("on"));
         assertEquals(1, state.getJSONObject("snapshots").getJSONObject("a").getJSONObject("schedules").getJSONObject("2.1")
             .getJSONObject(ScheduleLogic.today(System.currentTimeMillis())).getJSONArray("slots").getInt(0));
         assertEquals(ListenableWorker.Result.success(), worker().doWork());
         assertEquals(1, Shadows.shadowOf(context.getSystemService(NotificationManager.class)).getAllNotifications().size());
         assertSame(firstNotice, Shadows.shadowOf(context.getSystemService(NotificationManager.class)).getAllNotifications().get(0));
+        assertEquals(comparison.toString(), new SyncStore(context).read().getJSONObject("snapshots").getJSONObject("a").getJSONObject("schedules")
+            .getJSONObject("2.1").getJSONObject(ScheduleLogic.today(System.currentTimeMillis())).getJSONObject("comparison").toString());
     }
     @Test public void failedFetchKeepsLastGraphAndDoesNotAnnounceAnUpdate() throws Exception {
         fake = new PoweronClient() { @Override public JSONObject load(JSONObject a, String d, long n) throws Exception { return snapshot(0); } };

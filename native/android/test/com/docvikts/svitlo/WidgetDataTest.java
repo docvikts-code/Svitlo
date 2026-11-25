@@ -52,4 +52,17 @@ public class WidgetDataTest {
         days.remove("2026-11-22");
         assertEquals("Далі немає даних", WidgetData.from(state, "a", "2.1", now).next);
     }
+    @Test public void widgetUsesOwnTodayComparisonAndSuppressesItForStaleCache() throws Exception {
+        JSONObject state = state(now());
+        JSONObject previous = state.getJSONObject("snapshots").getJSONObject("a");
+        JSONObject next = new JSONObject(previous.toString());
+        next.getJSONObject("schedules").getJSONObject("2.1").getJSONObject(DAY).getJSONArray("slots").put(30, 0).put(31, 0);
+        ScheduleComparison.attach(previous, next, now());
+        state.getJSONObject("snapshots").put("a", next);
+        assertEquals("+1 год світла", WidgetData.from(state, "a", "2.1", now()).change);
+        assertEquals("", WidgetData.from(state, "b", "2.1", now()).change);
+        next.put("stale", true);
+        assertEquals("", WidgetData.from(state, "a", "2.1", now()).change);
+    }
+
 }

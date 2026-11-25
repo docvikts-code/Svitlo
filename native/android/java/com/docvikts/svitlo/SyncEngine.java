@@ -66,14 +66,19 @@ public final class SyncEngine {
                         JSONObject current = store.read();
                         if (current.optLong("revision") != revision || stopped.getAsBoolean()) return current;
                         JSONObject snapshots = SyncStore.snapshots(current), previous = snapshots.optJSONObject(id);
+                        long comparisonAt = System.currentTimeMillis();
+                        next.put("fetchedAt", comparisonAt);
+                        ScheduleComparison.attach(previous, next, comparisonAt);
                         boolean changed = ScheduleLogic.changed(previous, next, day);
                         snapshots.put(id, next);
                         current.put("snapshots", snapshots);
                         ScheduleNotifications.reconcile(context, current);
                         store.write(current);
                         if (changed && current.optBoolean("notifyChanges", true)) {
+                            String summary = ScheduleComparison.notification(previous, next, day);
                             ScheduleNotifications.show(context, ScheduleNotifications.UPDATES, "updates:" + id,
-                                "Світло: графік оновлено", address.optString("label") + ". Змінилися дані графіка на сьогодні або завтра. Відкрийте Svitlo, щоб переглянути.");
+                                "Світло: графік оновлено", address.optString("label") + ". " + (summary.isEmpty()
+                                    ? "Змінилися дані графіка на сьогодні або завтра. Відкрийте Svitlo, щоб переглянути." : summary));
                         }
                     }
                     completed++;

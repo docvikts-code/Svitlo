@@ -42,6 +42,7 @@ await writeFile(path, xml);
 await cp('native/android/java', 'android/app/src/main/java', { recursive: true });
 await cp('native/android/res', 'android/app/src/main/res', { recursive: true });
 await cp('native/android/test', 'android/app/src/test/java', { recursive: true });
+await cp('test/fixtures', 'android/app/src/test/resources', { recursive: true });
 const gradlePath = 'android/app/build.gradle';
 let gradle = await readFile(gradlePath, 'utf8');
 if (!gradle.includes('background.gradle')) gradle += "\napply from: '../../native/android/background.gradle'\n";

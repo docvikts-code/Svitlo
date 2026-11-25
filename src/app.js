@@ -3,6 +3,8 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { API_ORIGIN, TIME_ZONE, STATE_LABELS, members, groupsOf, kyivClock, addDays,
   hhmm, duration, formatSourceTimestamp, scheduleRequest, parseSchedules, intervals, statusInfo, alertEvents } from './core.js';
 
+import { attachComparisons, changeSummary, possibleSummary, changedIntervals } from './comparison.js';
+
 const $ = selector => document.querySelector(selector);
 const el = (tag, cls, text) => {
   const node = document.createElement(tag);
@@ -41,6 +43,7 @@ const savedLead = Number(store.get('lead', 30));
 let lead = [15, 30, 60, 120].includes(savedLead) ? savedLead : 30;
 const snapshots = new Map();
 const requests = new Map();
+const openComparisons = new Set();
 let wizardVersion = 0;
 let stopSearch = () => {};
 
@@ -156,7 +159,8 @@ async function refresh(address) {
       if (!addresses.some(a => String(a.id) === id)) return;
       address.groups = groups;
       persistAddresses();
-      const snapshot = { schedules, date, fetchedAt: Date.now(), stale: false };
+      const now = Date.now();
+      const snapshot = attachComparisons(snapshots.get(id), { schedules, date, fetchedAt: now, stale: false }, now);
       snapshots.set(id, snapshot);
       store.set(`schedule:${id}`, snapshot);
     } catch (error) {
@@ -213,7 +217,60 @@ function timestamp(ms) {
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
 }
 
-function dayCard(title, date, day, minute, stale, info, snapshot) {
+function comparisonCard(day, group, date, stale) {
+  const change = day.comparison;
+  if (!change?.before || !change.after || change.previousSlots?.length !== 48) return null;
+  const delta = change.after.on - change.before.on;
+  const card = el('section', `schedule-change ${delta > 0 ? 'change-positive' : delta < 0 ? 'change-negative' : 'change-neutral'}`);
+  card.dataset.stale = String(!!stale);
+  card.setAttribute('aria-label', 'Порівняння графіків');
+  const heading = el('div', 'change-heading');
+  heading.append(el('span', null, stale ? 'Остання збережена зміна' : 'Графік змінився'), el('span', null, timestamp(change.changedAt)));
+  card.append(heading, el('p', 'change-title', changeSummary(change)),
+    el('p', 'change-totals', `За добу: ${duration(change.before.on)} → ${duration(change.after.on)}`),
+    el('p', 'change-possible', possibleSummary(change)));
+  if (stale) card.append(el('p', 'change-possible', 'Порівняння збережених версій. Актуальність не підтверджена.'));
+  const details = el('details', 'change-details');
+  const key = `${selectedId}|${group}|${date}`;
+  details.open = openComparisons.has(key);
+  const summary = el('summary');
+  const caption = el('span', null, details.open ? 'Згорнути порівняння' : 'Що змінилося');
+  const chevron = el('span', 'change-chevron', '⌄'); chevron.setAttribute('aria-hidden', 'true');
+  summary.append(caption, chevron);
+  details.append(summary);
+  const inside = el('div', 'comparison-content');
+  for (const [name, slots, received] of [['Попередній графік', change.previousSlots, change.previousFetchedAt], ['Новий графік', day.slots, change.changedAt]]) {
+    const graph = el('div', 'comparison-graph');
+    graph.append(el('p', 'comparison-caption', `${name} · ${timestamp(received)} (Київ)`));
+    const bar = el('div', 'mini-bar'); bar.setAttribute('role', 'img');
+    bar.setAttribute('aria-label', `${name}. ${intervals(slots).map(i => `${hhmm(i.start)}–${hhmm(i.end)}: ${STATE_LABELS[i.value] ?? 'немає даних'}`).join('; ')}`);
+    for (let i = 0; i < 48; i++) {
+      const cell = el('i', `s${slots[i]}`);
+      cell.title = `${hhmm(i * 30)}–${hhmm((i + 1) * 30)}: ${STATE_LABELS[slots[i]]}`;
+      cell.setAttribute('aria-hidden', 'true'); bar.append(cell);
+    }
+    const axis = el('div', 'axis'); axis.setAttribute('aria-hidden', 'true');
+    for (const t of ['00', '06', '12', '18', '24']) axis.append(el('span', null, t));
+    graph.append(bar, axis); inside.append(graph);
+  }
+  const list = el('div', 'comparison-list');
+  const label = value => ({ 0: 'є за графіком', 1: 'відключення', 10: 'можливе відключення' }[value]);
+  for (const interval of changedIntervals(change.previousSlots, day.slots)) {
+    const row = el('div', 'comparison-row'), states = el('div');
+    states.append(el('p', 'comparison-before', `Було: ${label(interval.before)}`), el('p', null, `Стало: ${label(interval.after)}`));
+    row.append(el('b', null, `${hhmm(interval.start)}–${hhmm(interval.end)}`), states); list.append(row);
+  }
+  inside.append(list, el('p', 'comparison-caption', `Порівняно з графіком, отриманим ${timestamp(change.previousFetchedAt)} (Київ).`));
+  details.append(inside);
+  details.ontoggle = () => {
+    if (details.open) openComparisons.add(key); else openComparisons.delete(key);
+    caption.textContent = details.open ? 'Згорнути порівняння' : 'Що змінилося';
+  };
+  card.append(details);
+  return card;
+}
+
+function dayCard(title, date, day, minute, stale, info, snapshot, group) {
   const card = el('section', 'card day');
   const heading = el('div', 'day-header');
   const dayHeading = el('h3', null, title);
@@ -235,6 +292,8 @@ function dayCard(title, date, day, minute, stale, info, snapshot) {
       el('p', 'status-detail', info.text));
     card.append(status);
   }
+  const comparison = comparisonCard(day, group, date, stale);
+  if (comparison) card.append(comparison);
   if (stale) card.append(el('p', 'mut', 'Збережений графік. Актуальність не підтверджена.'));
   const timeline = el('div', 'timeline');
   const bar = el('div', 'bar');
@@ -337,8 +396,8 @@ function render() {
     section.setAttribute('aria-label', `Графіки підчерги ${group}`);
     section.append(el('h2', 'queue-title', `Підчерга ${group}`));
     const info = stale ? null : statusInfo(days, date, min);
-    section.append(dayCard('Сьогодні', date, days[date], min, stale, info, snapshot),
-      dayCard('Завтра', addDays(date, 1), days[addDays(date, 1)], null, stale, null, snapshot));
+    section.append(dayCard('Сьогодні', date, days[date], min, stale, info, snapshot, group),
+      dayCard('Завтра', addDays(date, 1), days[addDays(date, 1)], null, stale, null, snapshot, group));
     view.append(section);
   }
 }

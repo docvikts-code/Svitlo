@@ -8,6 +8,7 @@ import { createAppServer } from '../server.mjs';
 // Run with SVITLO_LIVE_TEST=1 to additionally exercise the official API.
 const live = process.env.SVITLO_LIVE_TEST === '1';
 let offline = false;
+let fixtureVersion = 0;
 const fixtureFetch = async url => {
   if (offline) throw new TypeError('offline');
   const query = new URL(url).searchParams;
@@ -20,8 +21,8 @@ const fixtureFetch = async url => {
   else if (path.endsWith('/a_gpv_g')) {
     const date = query.get('after').slice(0, 10);
     const times = Object.fromEntries(Array.from({ length: 48 }, (_, i) =>
-      [`${String(i >> 1).padStart(2, '0')}:${i % 2 ? '30' : '00'}`, i === 26 ? '10' : i >= 27 && i < 35 ? '1' : '0']));
-    data = { 'hydra:member': [{ dateGraph: `${date}T00:00:00Z`, dateCreate: `${date}T10:00:00Z`, dataJson: { '2.1': { times } } }] };
+      [`${String(i >> 1).padStart(2, '0')}:${i % 2 ? '30' : '00'}`, i === (fixtureVersion === 1 || fixtureVersion === 2 ? 29 : 26) ? '10' : i >= (fixtureVersion === 1 || fixtureVersion === 2 ? 30 : 27) && i < 35 ? '1' : '0']));
+    data = { 'hydra:member': [{ dateGraph: `${date}T00:00:00Z`, dateCreate: `${date}T10:${fixtureVersion === 2 ? '30' : '00'}:00Z`, dataJson: { '2.1': { times } } }] };
   } else throw new Error(`Unexpected endpoint ${path}`);
   return Response.json(data);
 };
@@ -83,6 +84,32 @@ try {
   console.log('PASS mobile 390/320px and marker labels at both midnight edges');
 
   await page.setViewportSize({ width: 390, height: 844 });
+
+  if (!live) {
+    assert.equal(await page.locator('.schedule-change').count(), 0);
+    fixtureVersion = 1;
+    await page.getByRole('button', { name: 'Оновити графік', exact: true }).click();
+    await page.getByText('Світла за графіком більше на 1 год 30 хв', { exact: true }).waitFor();
+    await page.screenshot({ path: 'test-results/mobile-change.png', fullPage: true });
+    await page.locator('.change-details summary').click();
+    assert.equal(await page.locator('.change-details').evaluate(node => node.open), true);
+    assert.equal(await page.locator('.mini-bar i').count(), 96);
+    assert.equal(await page.locator('.comparison-row').count(), 3);
+    await page.screenshot({ path: 'test-results/comparison-expanded.png', fullPage: true });
+    fixtureVersion = 2;
+    await page.getByRole('button', { name: 'Оновити графік', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('#refreshBtn').disabled);
+    assert.equal(await page.locator('.change-details').evaluate(node => node.open), true);
+    await page.reload();
+    await page.getByText('Світла за графіком більше на 1 год 30 хв', { exact: true }).waitFor();
+    await page.waitForFunction(() => !document.querySelector('#refreshBtn').disabled);
+    fixtureVersion = 3;
+    await page.getByRole('button', { name: 'Оновити графік', exact: true }).click();
+    await page.getByText('Світла за графіком менше на 1 год 30 хв', { exact: true }).waitFor();
+    await page.screenshot({ path: 'test-results/comparison-less.png', fullPage: true });
+    console.log('PASS comparison: baseline silent, +90/−90 min, details, metadata poll and reload persistence');
+  }
+
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.screenshot({ path: 'test-results/mobile-dark.png', fullPage: true });
   await page.emulateMedia({ colorScheme: 'light' });
@@ -105,6 +132,7 @@ try {
   await page.reload();
   await page.getByText('Актуальність графіка не підтверджена', { exact: true }).waitFor({ timeout: 10000 });
   assert.equal(await page.locator('#view .big').count(), 0);
+  if (!live) assert.equal(await page.locator('.schedule-change[data-stale=true]').count(), 1);
   assert.ok(await page.locator('table.intervals').count() > 0);
   console.log('PASS failed refresh: labelled cache, no current-state claim');
   await context.close();
@@ -144,6 +172,7 @@ try {
   assert.equal(await second.locator('#addressSelect').inputValue(), 'b');
   assert.equal(await second.getByRole('heading', { name: 'Підчерга 1.1', exact: true }).count(), 0);
   assert.equal(await second.locator('.bar i').count(), 96);
+  assert.equal(await second.locator('.schedule-change').count(), 0);
   assert.equal(await second.getByText('Графік для цієї підчерги ще не опубліковано.', { exact: true }).count(), 2);
   console.log('PASS concurrent address switching; separate groups; unknown tomorrow');
   assert.deepEqual(errors, []);

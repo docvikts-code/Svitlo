@@ -10,6 +10,7 @@ import org.json.JSONObject;
 public final class WidgetData {
     public String addressId, group, address = "Виберіть адресу", title = "Налаштуйте віджет";
     public String note = "Торкніться, щоб вибрати адресу", time = "—", next = "", remaining = "", checked = "Відкрийте Svitlo";
+    public String change = "";
     public Integer value;
     public JSONArray slots;
     public boolean configured, stale = true;
@@ -43,6 +44,10 @@ public final class WidgetData {
         if (m.stale) { m.title = "Дані застаріли"; m.note = "Актуальність не підтверджена"; m.next = "Оновіть графік"; return m; }
         m.value = ScheduleLogic.state(m.slots == null ? null : m.slots.opt(m.minute / 30));
         if (m.value == null) { m.title = "Немає даних"; m.note = "Графік ще не опубліковано"; return m; }
+        try {
+            JSONObject change = schedules.getJSONObject(group).getJSONObject(today).optJSONObject("comparison");
+            if (change != null) m.change = ScheduleComparison.shortText(change);
+        } catch (Exception ignored) { /* Older caches have no comparison. */ }
         m.title = m.value == 0 ? "Світло є" : m.value == 1 ? "Відключення" : "Можливе відключення";
         m.note = "За графіком на " + clock(now);
         try {

@@ -98,7 +98,10 @@ public final class ScheduleWidgets {
         Bundle options = AppWidgetManager.getInstance(c).getAppWidgetOptions(id);
         boolean roomy = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 190) >= 215;
         view.setViewVisibility(R.id.widget_remaining, compact || !roomy || data.remaining.isEmpty() ? View.GONE : View.VISIBLE);
-        view.setTextViewText(R.id.widget_checked, refreshing ? "Запит на оновлення…" : data.checked);
+        String checked = data.checked;
+        if (!compact && options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 320) >= 300 && !data.change.isEmpty()) checked = data.change + " · " + checked;
+        view.setTextViewText(R.id.widget_checked, refreshing ? "Запит на оновлення…" : checked);
+        view.setContentDescription(R.id.widget_checked, data.checked + (data.change.isEmpty() ? "" : "; " + data.change));
         int color = data.stale || data.value == null ? R.color.widget_muted : data.value == 0 ? R.color.widget_on : data.value == 1 ? R.color.widget_off : R.color.widget_maybe;
         view.setTextColor(R.id.widget_status, c.getColor(color));
         view.setOnClickPendingIntent(R.id.widget_root, open(c, id, data));
