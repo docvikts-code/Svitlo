@@ -64,4 +64,47 @@ public class ScheduleComparisonTest {
         assertEquals("Сьогодні, підчерга 2.1: Світла за графіком більше на 1 год 30 хв.", text);
         assertEquals("+1 год 30 хв світла", ScheduleComparison.shortText(change(next, DAY)));
     }
+    @Test public void dayComparisonMatchesSharedFixturesAndDoesNotCountPossibleOutagesAsPower() throws Exception {
+        JSONArray cases = fixtures();
+        int[] deltas = { 90, -90, 0, 0, 30 };
+        for (int i = 0; i < deltas.length; i++) {
+            JSONObject f = cases.getJSONObject(i);
+            JSONObject result = ScheduleComparison.compareDays(new JSONObject().put("slots", f.getJSONArray("before")),
+                new JSONObject().put("slots", f.getJSONArray("after")));
+            assertEquals(deltas[i], result.getJSONObject("after").getInt("on") - result.getJSONObject("before").getInt("on"));
+            for (String side : new String[] { "before", "after" }) {
+                JSONObject totals = result.getJSONObject(side);
+                assertEquals(1440, totals.getInt("on") + totals.getInt("off") + totals.getInt("maybe"));
+            }
+            if (deltas[i] == 0) assertEquals("Завтра стільки ж світла за графіком", ScheduleComparison.daySummary(result));
+        }
+    }
+    @Test public void dayComparisonRejectsMissingPartialAndUnknownDays() throws Exception {
+        JSONObject full = snapshot(fixtures().getJSONObject(0).getJSONArray("before"), "2.1", DAY)
+            .getJSONObject("schedules").getJSONObject("2.1").getJSONObject(DAY);
+        JSONObject unknown = new JSONObject(full.toString()); unknown.getJSONArray("slots").put(0, JSONObject.NULL);
+        JSONObject shortDay = new JSONObject(full.toString()); shortDay.getJSONArray("slots").remove(47);
+        for (JSONObject missing : new JSONObject[] { null, new JSONObject(), unknown, shortDay }) {
+            assertNull(ScheduleComparison.compareDays(missing, full));
+            assertNull(ScheduleComparison.compareDays(full, missing));
+        }
+    }
+    @Test public void firstTomorrowPublicationAddsDaySummaryWithoutRepeatingOnUnchangedPollOrRollover() throws Exception {
+        JSONObject f = fixtures().getJSONObject(0), before = snapshot(f.getJSONArray("before"), "2.1", DAY);
+        JSONObject next = new JSONObject(before.toString());
+        String tomorrow = ScheduleLogic.addDays(DAY, 1);
+        next.getJSONObject("schedules").getJSONObject("2.1").put(tomorrow, new JSONObject().put("slots", f.getJSONArray("after")));
+        String text = ScheduleComparison.notification(before, next, DAY);
+        assertTrue(text.contains("Опубліковано графік на завтра, підчерга 2.1"));
+        assertTrue(text.contains("Завтра світла за графіком більше на 1 год 30 хв"));
+        assertTrue(text.contains("Можливі відключення: сьогодні 1 год, завтра 1 год"));
+        assertEquals("", ScheduleComparison.notification(next, new JSONObject(next.toString()), DAY));
+        assertEquals("", ScheduleComparison.notification(next, new JSONObject(next.toString()), tomorrow));
+        assertEquals("", ScheduleComparison.notification(null, next, DAY));
+        JSONObject missingToday = new JSONObject(next.toString());
+        missingToday.getJSONObject("schedules").getJSONObject("2.1").remove(DAY);
+        assertEquals("", ScheduleComparison.notification(before, missingToday, DAY));
+        JSONObject wrongGroup = snapshot(f.getJSONArray("after"), "3.1", tomorrow);
+        assertEquals("", ScheduleComparison.notification(before, wrongGroup, DAY));
+    }
 }

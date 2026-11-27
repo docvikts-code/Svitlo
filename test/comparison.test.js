@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { attachComparisons, changeSummary, possibleSummary, changedIntervals } from '../src/comparison.js';
+import { attachComparisons, changeSummary, possibleSummary, changedIntervals, compareDays, dayComparisonSummary } from '../src/comparison.js';
 const day = '2026-11-25';
 const cases = JSON.parse(readFileSync(new URL('./fixtures/comparison-cases.json', import.meta.url), 'utf8'));
 const snapshot = (slots, group = '2.1', date = day) => ({ fetchedAt: 1000,
@@ -50,4 +50,32 @@ test('possible durations stay separate and detail intervals retain before/after 
   assert.deepEqual(changedIntervals(cases[0].before, cases[0].after), [
     { start: 780, end: 810, before: 10, after: 0 }, { start: 810, end: 870, before: 1, after: 0 }, { start: 870, end: 900, before: 1, after: 10 },
   ]);
+});
+
+test('today/tomorrow uses full-day totals with possible outages separate, including equal duration', () => {
+  for (const [index, delta] of [[0, 90], [1, -90], [2, 0], [3, 0], [4, 30]]) {
+    const f = cases[index], today = { slots: f.before }, tomorrow = { slots: f.after };
+    const original = JSON.stringify([today, tomorrow]);
+    const comparison = compareDays(today, tomorrow);
+    assert.equal(comparison.after.on - comparison.before.on, delta);
+    assert.equal(comparison.before.on + comparison.before.off + comparison.before.maybe, 1440);
+    assert.equal(comparison.after.on + comparison.after.off + comparison.after.maybe, 1440);
+    assert.equal(dayComparisonSummary(comparison).includes('більше'), delta > 0);
+    assert.equal(dayComparisonSummary(comparison).includes('менше'), delta < 0);
+    if (!delta) assert.equal(dayComparisonSummary(comparison), 'Завтра стільки ж світла за графіком');
+    assert.equal(JSON.stringify([today, tomorrow]), original);
+  }
+  const possible = compareDays({ slots: cases[3].before }, { slots: cases[3].after });
+  assert.equal(possible.before.maybe, 60); assert.equal(possible.after.maybe, 90);
+});
+test('today/tomorrow needs both complete days and normalizes valid string states', () => {
+  const full = { slots: Array(48).fill(0) };
+  for (const missing of [undefined, {}, { slots: Array(47).fill(0) }, { slots: Array(49).fill(0) },
+    { slots: [null, ...Array(47).fill(0)] }, { slots: ['', ...Array(47).fill(0)] }]) {
+    assert.equal(compareDays(missing, full), null);
+    assert.equal(compareDays(full, missing), null);
+  }
+  const result = compareDays({ slots: Array(48).fill('0') }, { slots: Array(48).fill('10') });
+  assert.equal(result.after.on - result.before.on, -1440);
+  assert.equal(result.after.maybe, 1440);
 });

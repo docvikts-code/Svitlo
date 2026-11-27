@@ -69,11 +69,21 @@ public final class ScheduleComparison {
         return a.optInt("off") == b.optInt("off") && a.optInt("maybe") == b.optInt("maybe")
             ? "Години змінилися, тривалість світла — та сама" : "Тривалість світла за графіком — та сама";
     }
+    static JSONObject compareDays(JSONObject today, JSONObject tomorrow) throws Exception {
+        if (!complete(today) || !complete(tomorrow)) return null;
+        return new JSONObject().put("before", totals(values(today))).put("after", totals(values(tomorrow)));
+    }
+    static String daySummary(JSONObject change) throws Exception {
+        int delta = change.getJSONObject("after").getInt("on") - change.getJSONObject("before").getInt("on");
+        return delta == 0 ? "Завтра стільки ж світла за графіком"
+            : "Завтра світла за графіком " + (delta > 0 ? "більше" : "менше") + " на " + duration(Math.abs(delta));
+    }
     static String shortText(JSONObject change) throws Exception {
         int delta = change.getJSONObject("after").optInt("on") - change.getJSONObject("before").optInt("on");
         return delta == 0 ? "Графік змінено" : (delta > 0 ? "+" : "−") + duration(Math.abs(delta)) + " світла";
     }
     static String notification(JSONObject previous, JSONObject next, String today) throws Exception {
+        if (previous == null || !previous.has("schedules")) return "";
         JSONObject old = previous == null ? null : previous.optJSONObject("schedules");
         StringBuilder result = new StringBuilder();
         JSONObject schedules = next.getJSONObject("schedules");
@@ -85,6 +95,17 @@ public final class ScheduleComparison {
                 if (change == null || !complete(before) || !complete(data) || same(before, data)) continue;
                 if (result.length() > 0) result.append("\n");
                 result.append(day.equals(today) ? "Сьогодні" : "Завтра").append(", підчерга ").append(group).append(": ").append(summary(change)).append(".");
+            }
+            String tomorrow = ScheduleLogic.addDays(today, 1);
+            JSONObject oldDays = old == null ? null : old.optJSONObject(group);
+            JSONObject comparison = compareDays(days.optJSONObject(today), days.optJSONObject(tomorrow));
+            if (comparison != null && !complete(oldDays == null ? null : oldDays.optJSONObject(tomorrow))) {
+                if (result.length() > 0) result.append("\n");
+                result.append("Опубліковано графік на завтра, підчерга ").append(group).append(": ").append(daySummary(comparison)).append(".");
+                result.append(" Сьогодні: ").append(duration(comparison.getJSONObject("before").getInt("on")))
+                    .append(", завтра: ").append(duration(comparison.getJSONObject("after").getInt("on"))).append(".");
+                result.append(" Можливі відключення: сьогодні ").append(duration(comparison.getJSONObject("before").getInt("maybe")))
+                    .append(", завтра ").append(duration(comparison.getJSONObject("after").getInt("maybe"))).append(".");
             }
         }
         return result.toString();

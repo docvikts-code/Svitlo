@@ -76,6 +76,26 @@ public class BackgroundSyncTest {
         assertEquals(comparison.toString(), new SyncStore(context).read().getJSONObject("snapshots").getJSONObject("a").getJSONObject("schedules")
             .getJSONObject("2.1").getJSONObject(ScheduleLogic.today(System.currentTimeMillis())).getJSONObject("comparison").toString());
     }
+    @Test public void publishedTomorrowNotifiesWithWholeDayDifferenceOnlyOnce() throws Exception {
+        fake = new PoweronClient() { @Override public JSONObject load(JSONObject a, String d, long n) throws Exception { return snapshot(0); } };
+        worker().doWork();
+        fake = new PoweronClient() { @Override public JSONObject load(JSONObject a, String d, long n) throws Exception {
+            JSONObject result = snapshot(0);
+            String tomorrow = ScheduleLogic.addDays(d, 1);
+            result.getJSONObject("schedules").getJSONObject("2.1").put(tomorrow,
+                ScheduleLogicTest.schedules("2.1", tomorrow, 1).getJSONObject("2.1").getJSONObject(tomorrow));
+            return result;
+        } };
+        assertEquals(ListenableWorker.Result.success(), worker().doWork());
+        android.app.Notification notice = Shadows.shadowOf(context.getSystemService(NotificationManager.class)).getAllNotifications().get(0);
+        String text = notice.extras.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT).toString();
+        assertTrue(text.contains("Опубліковано графік на завтра, підчерга 2.1"));
+        assertTrue(text.contains("Завтра світла за графіком менше на 24 год"));
+        assertTrue(text.contains("Сьогодні: 24 год, завтра: 0 хв"));
+        worker().doWork();
+        assertEquals(1, Shadows.shadowOf(context.getSystemService(NotificationManager.class)).getAllNotifications().size());
+        assertSame(notice, Shadows.shadowOf(context.getSystemService(NotificationManager.class)).getAllNotifications().get(0));
+    }
     @Test public void failedFetchKeepsLastGraphAndDoesNotAnnounceAnUpdate() throws Exception {
         fake = new PoweronClient() { @Override public JSONObject load(JSONObject a, String d, long n) throws Exception { return snapshot(0); } };
         worker().doWork();

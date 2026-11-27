@@ -9,6 +9,18 @@ export function dayTotals(slots) {
     off: slots.filter(v => v === 1).length * 30, maybe: slots.filter(v => v === 10).length * 30 };
 }
 
+// The caller supplies two calendar days from the same address and exact group.
+// Unlike revision history, this is derived from the latest snapshot on every render.
+export function compareDays(today, tomorrow) {
+  if (!complete(today) || !complete(tomorrow)) return null;
+  return { before: dayTotals(values(today)), after: dayTotals(values(tomorrow)) };
+}
+export function dayComparisonSummary(change) {
+  const delta = change.after.on - change.before.on;
+  return delta ? `Завтра світла за графіком ${delta > 0 ? 'більше' : 'менше'} на ${duration(Math.abs(delta))}`
+    : 'Завтра стільки ж світла за графіком';
+}
+
 // Called separately for each address. Dates and exact groups are never substituted.
 // Keep the last actual revision across metadata-only refreshes and midnight.
 export function attachComparisons(previous, next, now = Date.now()) {

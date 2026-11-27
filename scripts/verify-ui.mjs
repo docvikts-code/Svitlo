@@ -175,8 +175,99 @@ try {
   assert.equal(await second.locator('.schedule-change').count(), 0);
   assert.equal(await second.getByText('Графік для цієї підчерги ще не опубліковано.', { exact: true }).count(), 2);
   console.log('PASS concurrent address switching; separate groups; unknown tomorrow');
-  assert.deepEqual(errors, []);
   await mock.close();
+
+  if (!live) {
+    const daily = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await daily.addInitScript(() => {
+      localStorage.setItem('addrs', JSON.stringify([
+        { id: 'a', cityId: 1, streetId: 1, house: '1', label: 'Адреса А' },
+        { id: 'b', cityId: 2, streetId: 2, house: '2', label: 'Адреса Б' },
+      ]));
+      if (!localStorage.getItem('sel')) localStorage.setItem('sel', JSON.stringify('a'));
+    });
+    const screen = await daily.newPage();
+    await screen.clock.setFixedTime(new Date('2026-11-27T10:08:00Z'));
+    screen.on('pageerror', e => errors.push(e.message));
+    let published = false, tomorrowOn = 27, partialToday = false, failed = false;
+    const slots = (on, maybe) => Object.fromEntries(Array.from({ length: 48 }, (_, i) =>
+      [`${String(i >> 1).padStart(2, '0')}:${i % 2 ? '30' : '00'}`, i < on ? '0' : i < on + maybe ? '10' : '1']));
+    await screen.route('**/api/**', async route => {
+      if (failed) { await route.abort(); return; }
+      const url = new URL(route.request().url());
+      let data;
+      if (url.pathname.includes('building-groups')) data = { buildingGroups:
+        (url.searchParams.get('cityId') === '1' ? ['2.1', '3.1'] : ['4.1']).map(chergGpv => ({ chergGpv })) };
+      else if (url.pathname.endsWith('/a_gpv_g')) {
+        const groups = url.searchParams.getAll('group[]');
+        data = { 'hydra:member': (published ? ['2026-11-27', '2026-11-28'] : ['2026-11-27']).map(date => {
+          const tomorrow = date === '2026-11-28';
+          return { dateGraph: `${date}T00:00:00Z`, dateCreate: '2026-11-27T10:00:00Z',
+            dataJson: Object.fromEntries(groups.map(group => {
+              const times = group === '2.1' ? slots(tomorrow ? tomorrowOn : 24, tomorrow ? 3 : 2)
+                : group === '3.1' ? slots(tomorrow ? 24 : 30, 0) : slots(tomorrow ? 44 : 40, 0);
+              if (partialToday && !tomorrow && group === '2.1') delete times['00:00'];
+              return [group, { times }];
+            })) };
+        }) };
+      } else data = { 'hydra:member': [] };
+      await route.fulfill({ json: data });
+    });
+    const refresh = async () => {
+      await screen.getByRole('button', { name: 'Оновити графік', exact: true }).click();
+      await screen.waitForFunction(() => !document.querySelector('#refreshBtn').disabled);
+    };
+    const firstQueue = screen.getByRole('region', { name: 'Графіки підчерги 2.1', exact: true });
+    await screen.goto(base);
+    await screen.waitForFunction(() => !document.querySelector('#refreshBtn').disabled);
+    assert.equal(await screen.locator('.day-comparison').count(), 0);
+    published = true;
+    await refresh();
+    await firstQueue.getByText('Завтра світла за графіком більше на 1 год 30 хв', { exact: true }).waitFor();
+    assert.equal(await screen.locator('.day-comparison').count(), 2);
+    assert.equal(await firstQueue.locator('.day').first().locator('.day-comparison').count(), 0);
+    assert.equal(await firstQueue.locator('.day-comparison').getByText('12 год', { exact: true }).count(), 1);
+    assert.equal(await firstQueue.locator('.day-comparison').getByText('13 год 30 хв', { exact: true }).count(), 1);
+    assert.equal(await screen.getByText('Завтра світла за графіком менше на 3 год', { exact: true }).count(), 1);
+    assert.ok((await firstQueue.locator('.day-comparison').innerText()).includes('Можливі відключення: сьогодні 1 год, завтра 1 год 30 хв.'));
+    await firstQueue.locator('.day').nth(1).screenshot({ path: 'test-results/tomorrow-more.png' });
+    await screen.setViewportSize({ width: 320, height: 740 });
+    assert.ok(await screen.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+    await screen.emulateMedia({ colorScheme: 'dark' });
+    await firstQueue.locator('.day').nth(1).screenshot({ path: 'test-results/tomorrow-dark.png' });
+    await screen.setViewportSize({ width: 390, height: 844 });
+    await screen.emulateMedia({ colorScheme: 'light' });
+    await screen.reload();
+    await firstQueue.getByText('Завтра світла за графіком більше на 1 год 30 хв', { exact: true }).waitFor();
+    await screen.waitForFunction(() => !document.querySelector('#refreshBtn').disabled);
+    tomorrowOn = 21;
+    await refresh();
+    await firstQueue.getByText('Завтра світла за графіком менше на 1 год 30 хв', { exact: true }).waitFor();
+    assert.equal(await firstQueue.locator('.schedule-change').count(), 1, 'revision and day comparison coexist');
+    tomorrowOn = 24;
+    await refresh();
+    await firstQueue.getByText('Завтра стільки ж світла за графіком', { exact: true }).waitFor();
+    partialToday = true;
+    await refresh();
+    assert.equal(await firstQueue.locator('.day-comparison').count(), 0);
+    partialToday = false;
+    await refresh();
+    failed = true;
+    await screen.reload();
+    await screen.getByText('Актуальність графіка не підтверджена', { exact: true }).waitFor();
+    assert.equal(await screen.locator('.day-comparison[data-stale=true]').count(), 2);
+    assert.equal(await screen.locator('.day-comparison').getByText('За збереженими графіками. Актуальність не підтверджена.', { exact: true }).count(), 2);
+    failed = false;
+    await screen.locator('#addressSelect').selectOption('b');
+    await screen.getByText('Завтра світла за графіком більше на 2 год', { exact: true }).waitFor();
+    assert.equal(await screen.locator('.day-comparison').count(), 1);
+    await screen.clock.setFixedTime(new Date('2026-11-27T22:01:00Z'));
+    await refresh();
+    assert.equal(await screen.locator('.day-comparison').count(), 0, 'midnight must compare new calendar dates');
+    console.log('PASS tomorrow vs today: publication, more/less/equal, separate groups/addresses, partial data, cache, mobile and midnight');
+    await daily.close();
+  }
+  assert.deepEqual(errors, []);
 } finally {
   await browser?.close();
   await new Promise(resolve => server.close(resolve));

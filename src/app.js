@@ -3,7 +3,7 @@ import { LocalNotifications } from '@capacitor/local-notifications';
 import { API_ORIGIN, TIME_ZONE, STATE_LABELS, members, groupsOf, kyivClock, addDays,
   hhmm, duration, formatSourceTimestamp, scheduleRequest, parseSchedules, intervals, statusInfo, alertEvents } from './core.js';
 
-import { attachComparisons, changeSummary, possibleSummary, changedIntervals } from './comparison.js';
+import { attachComparisons, changeSummary, possibleSummary, changedIntervals, compareDays, dayComparisonSummary } from './comparison.js';
 
 const $ = selector => document.querySelector(selector);
 const el = (tag, cls, text) => {
@@ -270,7 +270,25 @@ function comparisonCard(day, group, date, stale) {
   return card;
 }
 
-function dayCard(title, date, day, minute, stale, info, snapshot, group) {
+function dayComparisonCard(comparison, stale) {
+  const delta = comparison.after.on - comparison.before.on;
+  const card = el('section', `day-comparison ${delta > 0 ? 'change-positive' : delta < 0 ? 'change-negative' : 'change-neutral'}`);
+  card.dataset.stale = String(!!stale);
+  card.setAttribute('aria-label', 'Порівняння завтра зі сьогодні');
+  card.append(el('p', 'change-heading', 'Порівняно із сьогодні · за всю добу'),
+    el('p', 'change-title', dayComparisonSummary(comparison)));
+  const totals = el('div', 'day-totals');
+  for (const [name, value] of [['Сьогодні', comparison.before.on], ['Завтра', comparison.after.on]]) {
+    const item = el('div');
+    item.append(el('span', null, name), el('strong', null, duration(value)));
+    totals.append(item);
+  }
+  card.append(totals, el('p', 'change-possible', `Можливі відключення: сьогодні ${duration(comparison.before.maybe)}, завтра ${duration(comparison.after.maybe)}.`));
+  if (stale) card.append(el('p', 'change-possible', 'За збереженими графіками. Актуальність не підтверджена.'));
+  return card;
+}
+
+function dayCard(title, date, day, minute, stale, info, snapshot, group, dayComparison = null) {
   const card = el('section', 'card day');
   const heading = el('div', 'day-header');
   const dayHeading = el('h3', null, title);
@@ -292,6 +310,7 @@ function dayCard(title, date, day, minute, stale, info, snapshot, group) {
       el('p', 'status-detail', info.text));
     card.append(status);
   }
+  if (dayComparison) card.append(dayComparisonCard(dayComparison, stale));
   const comparison = comparisonCard(day, group, date, stale);
   if (comparison) card.append(comparison);
   if (stale) card.append(el('p', 'mut', 'Збережений графік. Актуальність не підтверджена.'));
@@ -396,8 +415,9 @@ function render() {
     section.setAttribute('aria-label', `Графіки підчерги ${group}`);
     section.append(el('h2', 'queue-title', `Підчерга ${group}`));
     const info = stale ? null : statusInfo(days, date, min);
+    const tomorrow = addDays(date, 1);
     section.append(dayCard('Сьогодні', date, days[date], min, stale, info, snapshot, group),
-      dayCard('Завтра', addDays(date, 1), days[addDays(date, 1)], null, stale, null, snapshot, group));
+      dayCard('Завтра', tomorrow, days[tomorrow], null, stale, null, snapshot, group, compareDays(days[date], days[tomorrow])));
     view.append(section);
   }
 }
